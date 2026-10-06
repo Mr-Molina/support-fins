@@ -16,7 +16,7 @@ function registerIpcHandlers(mainWindow) {
       canceled: false,
       file: {
         name: path.basename(filePath),
-        data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+        data
       }
     };
   });

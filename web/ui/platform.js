@@ -63,7 +63,15 @@ export async function saveFile(filename, data, mimeType = 'application/octet-str
     });
     if (!res || res.canceled || !res.filePath) return false;
     const buf = data instanceof Uint8Array ? data.buffer : data;
-    return await window.desktopAPI.writeFile(res.filePath, buf);
+    try {
+      return await window.desktopAPI.writeFile(res.filePath, buf);
+    } catch (err) {
+      console.error('Failed to write file to disk:', err);
+      if (typeof alert !== 'undefined') {
+        alert(`Failed to save ${filename}:\n${err?.message || err}`);
+      }
+      return false;
+    }
   }
 
   // Browser fallback: Blob download
@@ -73,7 +81,9 @@ export async function saveFile(filename, data, mimeType = 'application/octet-str
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    document.body?.appendChild(a);
     a.click();
+    document.body?.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return true;
   }

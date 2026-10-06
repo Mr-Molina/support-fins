@@ -1,4 +1,6 @@
-const { Menu, shell } = require('electron');
+const { Menu, shell, dialog } = require('electron');
+const fs = require('fs/promises');
+const path = require('path');
 
 function buildApplicationMenu(mainWindow) {
   const template = [
@@ -9,7 +11,26 @@ function buildApplicationMenu(mainWindow) {
           label: 'Open Model...',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
-            if (mainWindow) mainWindow.webContents.send('menu:openFile');
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+              title: 'Open 3D Model',
+              filters: [
+                { name: '3D Models (*.stl, *.3mf, *.step, *.stp)', extensions: ['stl', '3mf', 'step', 'stp'] },
+                { name: 'All Files (*.*)', extensions: ['*'] }
+              ],
+              properties: ['openFile']
+            });
+            if (canceled || filePaths.length === 0) return;
+            const filePath = filePaths[0];
+            try {
+              const data = await fs.readFile(filePath);
+              mainWindow.webContents.send('app:openFile', {
+                name: path.basename(filePath),
+                data
+              });
+            } catch (err) {
+              console.error('Menu open model failed:', err);
+            }
           }
         },
         { type: 'separator' },

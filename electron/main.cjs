@@ -27,23 +27,24 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, commandLine) => {
+  app.on('second-instance', (_event, commandLine, workingDirectory) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    const targetFile = findCadFileInArgv(commandLine);
+    const targetFile = findCadFileInArgv(commandLine, workingDirectory || process.cwd());
     if (targetFile && mainWindow) {
       sendOpenFile(mainWindow, targetFile);
     }
   });
 }
 
-function findCadFileInArgv(argv) {
+function findCadFileInArgv(argv, baseDir = process.cwd()) {
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
     if (typeof arg === 'string' && /\.(stl|3mf|step|stp)$/i.test(arg)) {
-      if (fs.existsSync(arg)) return arg;
+      const resolved = path.isAbsolute(arg) ? arg : path.resolve(baseDir, arg);
+      if (fs.existsSync(resolved)) return resolved;
     }
   }
   return null;
@@ -54,7 +55,7 @@ async function sendOpenFile(win, filePath) {
     const data = await fs.promises.readFile(filePath);
     win.webContents.send('app:openFile', {
       name: path.basename(filePath),
-      data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+      data
     });
   } catch (err) {
     console.error('Failed to read file for open:', err);
@@ -63,6 +64,7 @@ async function sendOpenFile(win, filePath) {
 
 function setupProtocolHandler() {
   const webRoot = path.join(__dirname, '..', 'web');
+  const webRootPrefix = webRoot.endsWith(path.sep) ? webRoot : webRoot + path.sep;
 
   protocol.handle('app', async (request) => {
     const parsed = new URL(request.url);
@@ -70,7 +72,7 @@ function setupProtocolHandler() {
     if (pathname === '/' || pathname === '') pathname = '/index.html';
 
     const safePath = path.normalize(path.join(webRoot, pathname));
-    if (!safePath.startsWith(webRoot)) {
+    if (safePath !== webRoot && !safePath.startsWith(webRootPrefix)) {
       return new Response('Access Denied', { status: 403 });
     }
 
