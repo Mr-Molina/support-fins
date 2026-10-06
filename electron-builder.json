@@ -1,0 +1,53 @@
+{
+  "appId": "com.printfins.support-fins",
+  "productName": "support-fins",
+  "copyright": "Copyright © 2026 Mr-Molina",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "electron/**/*",
+    "web/**/*",
+    "package.json"
+  ],
+  "fileAssociations": [
+    {
+      "ext": ["stl"],
+      "name": "STLAsciiBinaryMesh",
+      "description": "Stereolithography 3D Mesh",
+      "mimeType": "application/sla",
+      "role": "Viewer"
+    },
+    {
+      "ext": ["3mf"],
+      "name": "3DManufacturingFormat",
+      "description": "3MF 3D Model Package",
+      "mimeType": "model/3mf",
+      "role": "Viewer"
+    },
+    {
+      "ext": ["step", "stp"],
+      "name": "STEPExchangeFormat",
+      "description": "STEP CAD Geometry",
+      "mimeType": "model/step",
+      "role": "Viewer"
+    }
+  ],
+  "win": {
+    "target": ["nsis", "portable"],
+    "icon": "assets/icons/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "support-fins"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "assets/icons/icon.png",
+    "category": "Graphics",
+    "desktop": "assets/support-fins.desktop"
+  }
+}
