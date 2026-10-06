@@ -1,0 +1,19 @@
+{
+  "name": "support-fins",
+  "version": "1.0.0",
+  "description": "FDM support fin generator for thin walls and tall 3D prints",
+  "main": "electron/main.cjs",
+  "author": "Mr-Molina",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "desktop:start": "electron .",
+    "desktop:dist": "electron-builder --config electron-builder.json",
+    "desktop:dist:win": "electron-builder --config electron-builder.json --win",
+    "desktop:dist:linux": "electron-builder --config electron-builder.json --linux"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}
