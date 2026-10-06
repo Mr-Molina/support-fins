@@ -1,0 +1,7 @@
+{
+  "nodeModulesDir": "none",
+  "imports": {
+    "three": "./web/vendor/three/three.module.js",
+    "three/addons/": "./web/vendor/three/addons/"
+  }
+}
