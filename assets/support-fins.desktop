@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=support-fins
+Comment=FDM support fin generator for thin walls and tall 3D prints
+Exec=support-fins %U
+Icon=support-fins
+Type=Application
+StartupNotify=true
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=model/stl;model/3mf;model/step;application/sla;

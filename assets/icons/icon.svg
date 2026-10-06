@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="finGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#3a7bd5"/>
+    </linearGradient>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2c3e50"/>
+      <stop offset="100%" stop-color="#1a252f"/>
+    </linearGradient>
+  </defs>
+  <!-- Background Plate -->
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#bodyGrad)" stroke="#3a7bd5" stroke-width="8"/>
+  <!-- Build Bed Baseline -->
+  <path d="M 96 416 L 416 416" stroke="#4a6572" stroke-width="12" stroke-linecap="round"/>
+  <!-- Central Tall Thin Column (Part) -->
+  <rect x="232" y="96" width="48" height="320" rx="8" fill="#ecf0f1"/>
+  <!-- Left Buttress Fin -->
+  <path d="M 128 416 L 232 200 L 232 416 Z" fill="url(#finGrad)" opacity="0.9"/>
+  <!-- Right Buttress Fin -->
+  <path d="M 384 416 L 280 200 L 280 416 Z" fill="url(#finGrad)" opacity="0.9"/>
+  <!-- Horizontal Tines -->
+  <line x1="200" y1="260" x2="232" y2="260" stroke="#00d2ff" stroke-width="6"/>
+  <line x1="200" y1="310" x2="232" y2="310" stroke="#00d2ff" stroke-width="6"/>
+  <line x1="280" y1="260" x2="312" y2="260" stroke="#00d2ff" stroke-width="6"/>
+  <line x1="280" y1="310" x2="312" y2="310" stroke="#00d2ff" stroke-width="6"/>
+</svg>
