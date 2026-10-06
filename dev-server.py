@@ -25,8 +25,15 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Expires', '0')
         super().end_headers()
 
+    def list_directory(self, path):
+        self.send_error(404, "Directory listing disabled")
+        return None
+
     def log_message(self, fmt, *args):        # one line per request, no noise
-        sys.stderr.write(f"{self.command} {self.path} -> {args[1]}\n")
+        code = args[1] if len(args) > 1 else '-'
+        cmd = str(self.command).replace('\r', '').replace('\n', '')
+        path = str(self.path).replace('\r', '').replace('\n', '')
+        sys.stderr.write(f"{cmd} {path} -> {code}\n")
 
 
 def _lan_ip():
@@ -62,7 +69,9 @@ def main():
             print(f"On other devices on your LAN, open http://{ip}:{args.port}/")
     bind = '' if wildcard else args.host
     sys.stdout.flush()  # ensure the lines above land in a redirected log immediately (e.g. headless RPi)
-    http.server.ThreadingHTTPServer((bind, args.port), handler).serve_forever()
+    server = http.server.ThreadingHTTPServer((bind, args.port), handler)
+    server.timeout = 10
+    server.serve_forever()
 
 
 if __name__ == '__main__':

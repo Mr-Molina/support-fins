@@ -137,15 +137,28 @@ Deno.test('cutout: pattern off, and a wall too short for a hole, are unchanged',
   }
 });
 
-// Mid-plane sampling is the slow part; share one pass per pattern.
-const solidPlane = midPlane(wall('none'));
-const slopeSolid = midPlane(sloped('none'), 0.2);
-const slopeLattice = midPlane(sloped('lattice'), 0.2);
-const planes = Object.fromEntries(['diamond', 'triangle', 'arch', 'lattice']
-  .map((p) => [p, midPlane(wall(p))]));
+// Mid-plane sampling is the slow part; cached on demand when the sampling tests run.
+let _solidPlane, _slopeSolid, _slopeLattice, _planes;
+function getSolidPlane() {
+  if (!_solidPlane) _solidPlane = midPlane(wall('none'));
+  return _solidPlane;
+}
+function getPlanes() {
+  if (!_planes) {
+    _planes = Object.fromEntries(['diamond', 'triangle', 'arch', 'lattice']
+      .map((p) => [p, midPlane(wall(p))]));
+  }
+  return _planes;
+}
+function getSlopePlanes() {
+  if (!_slopeSolid) _slopeSolid = midPlane(sloped('none'), 0.2);
+  if (!_slopeLattice) _slopeLattice = midPlane(sloped('lattice'), 0.2);
+  return { slopeSolid: _slopeSolid, slopeLattice: _slopeLattice };
+}
 
 Deno.test('cutout: stays inside the solid wall and removes real material', () => {
-  for (const [pattern, { grid }] of Object.entries(planes)) {
+  const solidPlane = getSolidPlane();
+  for (const [pattern, { grid }] of Object.entries(getPlanes())) {
     let solid = 0, cut = 0, outside = 0;
     grid.forEach((row, i) => row.forEach((m, j) => {
       const s = solidPlane.grid[i][j];
@@ -161,7 +174,8 @@ Deno.test('cutout: stays inside the solid wall and removes real material', () =>
 });
 
 Deno.test('cutout: contact top, foot and end posts stay solid', () => {
-  for (const [pattern, { grid, xs, zs }] of Object.entries(planes)) {
+  const solidPlane = getSolidPlane();
+  for (const [pattern, { grid, xs, zs }] of Object.entries(getPlanes())) {
     const topZ = 30 - PROP.gap;
     zs.forEach((z, i) => xs.forEach((x, j) => {
       if (!solidPlane.grid[i][j]) return;
@@ -173,7 +187,7 @@ Deno.test('cutout: contact top, foot and end posts stay solid', () => {
 });
 
 Deno.test('cutout: no hole roof is flatter than 45 degrees', () => {
-  for (const [pattern, { grid, xs }] of Object.entries(planes)) {
+  for (const [pattern, { grid, xs }] of Object.entries(getPlanes())) {
     // Material with air directly below must have material diagonally below it
     // (one step over, one step down): the 45deg rule a printer can build.
     for (let i = 1; i < grid.length; i++) {
@@ -220,6 +234,7 @@ Deno.test('cutout: the setting reaches an Auto build through tunables', () => {
 });
 
 Deno.test('cutout: on a sloped fin the lattice climbs the slope, and still never bridges', () => {
+  const { slopeSolid, slopeLattice } = getSlopePlanes();
   const { grid, xs } = slopeLattice;
   let solid = 0, cut = 0, outside = 0;
   grid.forEach((row, i) => row.forEach((m, j) => {
@@ -249,22 +264,26 @@ Deno.test('cutout: on real parts no pattern throws, leaves a hole in the mesh, o
   // could raise the grams readout. Whatever the pattern, the support must be closed
   // and never heavier than the solid build.
   const cases = [['wedge', 'x', 60], ['lbracket', 'x', 60], ['tshape', 'x', 60], ['cylinder', 'y', 25]];
-  for (const [name, ax, deg] of cases) {
-    const topo = loadModel(name);
-    const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-    const rot = ax === 'x' ? [1, 0, 0, 0, c, s, 0, -s, c] : [c, 0, -s, 0, 1, 0, s, 0, c];
-    const res = analyze(topo, 45, rot);
-    const build = (p) => fins.buildFins(topo, res, rot,
-      { mode: 'auto', bedPad: true, tines: true, tunables: { cutout: p } }).triangles;
-    const solid = volume(build('none'));
-    for (const p of ['diamond', 'triangle', 'arch', 'lattice']) {
-      const t = build(p);
-      assert(isClosed(t), `${name} ${ax}${deg} ${p}: not closed`);
-      assert(volume(t) <= solid * 1.02 + 1,
-        `${name} ${ax}${deg} ${p}: ${volume(t).toFixed(0)} mm3 vs ${solid.toFixed(0)} solid`);
+  const was = CUT.pattern;
+  try {
+    for (const [name, ax, deg] of cases) {
+      const topo = loadModel(name);
+      const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+      const rot = ax === 'x' ? [1, 0, 0, 0, c, s, 0, -s, c] : [c, 0, -s, 0, 1, 0, s, 0, c];
+      const res = analyze(topo, 45, rot);
+      const build = (p) => fins.buildFins(topo, res, rot,
+        { mode: 'auto', bedPad: true, tines: true, tunables: { cutout: p } }).triangles;
+      const solid = volume(build('none'));
+      for (const p of ['diamond', 'triangle', 'arch', 'lattice']) {
+        const t = build(p);
+        assert(isClosed(t), `${name} ${ax}${deg} ${p}: not closed`);
+        assert(volume(t) <= solid + 1e-3,
+          `${name} ${ax}${deg} ${p}: ${volume(t).toFixed(0)} mm3 vs ${solid.toFixed(0)} solid`);
+      }
     }
+  } finally {
+    CUT.pattern = was;
   }
-  CUT.pattern = 'none';
 });
 
 Deno.test('cutout: a hole never outgrows its cell, whatever the cell height', () => {

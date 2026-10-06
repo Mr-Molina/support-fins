@@ -32,16 +32,26 @@ export function b64ToBytes(s) {
 
 export function bytesToB64(bytes) {
   const parts = [];
-  let chunk = '';
+  const CHUNK_SIZE = 8192;
+  let chars = new Array(CHUNK_SIZE);
+  let cIdx = 0;
   for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i], b = i + 1 < bytes.length ? bytes[i + 1] : 0, c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    const a = bytes[i];
+    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
     const v = (a << 16) | (b << 8) | c;
-    chunk += B64[(v >> 18) & 63] + B64[(v >> 12) & 63]
-      + (i + 1 < bytes.length ? B64[(v >> 6) & 63] : '=')
-      + (i + 2 < bytes.length ? B64[v & 63] : '=');
-    if (chunk.length > 65536) { parts.push(chunk); chunk = ''; }
+    chars[cIdx++] = B64[(v >> 18) & 63];
+    chars[cIdx++] = B64[(v >> 12) & 63];
+    chars[cIdx++] = i + 1 < bytes.length ? B64[(v >> 6) & 63] : '=';
+    chars[cIdx++] = i + 2 < bytes.length ? B64[v & 63] : '=';
+    if (cIdx >= CHUNK_SIZE) {
+      parts.push(chars.join(''));
+      cIdx = 0;
+    }
   }
-  parts.push(chunk);
+  if (cIdx > 0) {
+    parts.push(chars.slice(0, cIdx).join(''));
+  }
   return parts.join('');
 }
 

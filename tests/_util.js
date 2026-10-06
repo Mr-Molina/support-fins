@@ -2,8 +2,34 @@
 // --allow-read tests/` runs offline. The support engine is pure geometry, so
 // every test is: build some geometry, assert an invariant on the triangle soup.
 
-export const WEB = new URL('../web/', import.meta.url).pathname;
-export const MODELS = new URL('../prototype/stress/models/', import.meta.url).pathname;
+// Provide headless DOM shims so web/ui modules can be imported under Deno test runner
+if (typeof globalThis.document === 'undefined') {
+  const noop = () => {};
+  const fakeEl = {
+    addEventListener: noop, removeEventListener: noop,
+    setAttribute: noop, appendChild: noop, removeChild: noop,
+    classList: { add: noop, remove: noop, toggle: noop },
+    style: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    closest: () => fakeEl,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    clientWidth: 800, clientHeight: 600,
+  };
+  globalThis.document = {
+    getElementById: () => fakeEl,
+    querySelector: () => fakeEl,
+    querySelectorAll: () => [],
+    createElement: () => fakeEl,
+    body: fakeEl,
+  };
+  globalThis.window = globalThis;
+}
+
+import { fileURLToPath } from 'node:url';
+
+export const WEB = new URL('../web/', import.meta.url).href;
+export const MODELS = fileURLToPath(new URL('../prototype/stress/models/', import.meta.url));
 
 export const { buildTopology, analyze } = await import(`${WEB}overhangs.js`);
 export const fins = await import(`${WEB}fins.js`);
@@ -20,8 +46,12 @@ export function assertClose(a, b, tol, msg) {
 
 // --- STL + geometry --------------------------------------------------------
 export function readSTL(bytes) {
+  if (bytes.byteLength < 84) throw new Error('STL too short: missing header/count');
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const n = dv.getUint32(80, true);
+  if (bytes.byteLength < 84 + n * 50) {
+    throw new Error(`truncated STL: expected at least ${84 + n * 50} bytes for ${n} triangles, got ${bytes.byteLength}`);
+  }
   const pos = new Float32Array(n * 9);
   for (let f = 0; f < n; f++) {
     const o = 84 + f * 50 + 12;
@@ -96,6 +126,68 @@ export function holedPlateTopo(X, Y, TH, hx, hy) {
   return buildTopology({ getAttribute: (k) => (k === 'position' ? { array: pos } : null) });
 }
 
+/** A non-convex L-shaped bracket model fixture as a watertight topology object. */
+export function lShapeTopo(w = 30, h = 30, d = 10, t = 10) {
+  const tris = [];
+  const V = (x, y, z) => [x, y, z];
+  const quad = (a, b, c, d) => { tris.push(a, b, c, a, c, d); };
+  // Front face (y = 0, normal -Y): 3 non-overlapping rectangles: [0,t]x[0,t], [t,w]x[0,t], [0,t]x[t,h]
+  quad(V(0, 0, 0), V(t, 0, 0), V(t, 0, t), V(0, 0, t));
+  quad(V(t, 0, 0), V(w, 0, 0), V(w, 0, t), V(t, 0, t));
+  quad(V(0, 0, t), V(t, 0, t), V(t, 0, h), V(0, 0, h));
+  // Back face (y = d, normal +Y)
+  quad(V(0, d, t), V(t, d, t), V(t, d, 0), V(0, d, 0));
+  quad(V(t, d, t), V(w, d, t), V(w, d, 0), V(t, d, 0));
+  quad(V(0, d, h), V(t, d, h), V(t, d, t), V(0, d, t));
+  // 8 walls connecting y=0 to y=d
+  const loop = [
+    [0, 0], [t, 0], [w, 0], [w, t], [t, t], [t, h], [0, h], [0, t],
+  ];
+  for (let i = 0; i < loop.length; i++) {
+    const [x0, z0] = loop[i];
+    const [x1, z1] = loop[(i + 1) % loop.length];
+    quad(V(x0, 0, z0), V(x0, d, z0), V(x1, d, z1), V(x1, 0, z1));
+  }
+  const pos = new Float32Array(tris.length * 3);
+  let i = 0; for (const v of tris) { pos[i++] = v[0]; pos[i++] = v[1]; pos[i++] = v[2]; }
+  return buildTopology({ getAttribute: (k) => (k === 'position' ? { array: pos } : null) });
+}
+
+/** A non-convex C-channel model fixture with an overhang as a watertight topology object. */
+export function cChannelTopo(w = 30, h = 30, d = 10, t = 10) {
+  const tris = [];
+  const V = (x, y, z) => [x, y, z];
+  const quad = (a, b, c, d) => { tris.push(a, b, c, a, c, d); };
+  // Front face (y = 0): 5 rectangles:
+  // [0,t]x[0,t], [t,w]x[0,t], [0,t]x[t,h-t], [0,t]x[h-t,h], [t,w]x[h-t,h]
+  quad(V(0, 0, 0), V(t, 0, 0), V(t, 0, t), V(0, 0, t));
+  quad(V(t, 0, 0), V(w, 0, 0), V(w, 0, t), V(t, 0, t));
+  quad(V(0, 0, t), V(t, 0, t), V(t, 0, h - t), V(0, 0, h - t));
+  quad(V(0, 0, h - t), V(t, 0, h - t), V(t, 0, h), V(0, 0, h));
+  quad(V(t, 0, h - t), V(w, 0, h - t), V(w, 0, h), V(t, 0, h));
+
+  // Back face (y = d):
+  quad(V(0, d, t), V(t, d, t), V(t, d, 0), V(0, d, 0));
+  quad(V(t, d, t), V(w, d, t), V(w, d, 0), V(t, d, 0));
+  quad(V(0, d, h - t), V(t, d, h - t), V(t, d, t), V(0, d, t));
+  quad(V(0, d, h), V(t, d, h), V(t, d, h - t), V(0, d, h - t));
+  quad(V(t, d, h), V(w, d, h), V(w, d, h - t), V(t, d, h - t));
+
+  // 12 walls connecting y=0 to y=d
+  const loop = [
+    [0, 0], [t, 0], [w, 0], [w, t], [t, t], [t, h - t],
+    [w, h - t], [w, h], [t, h], [0, h], [0, h - t], [0, t],
+  ];
+  for (let i = 0; i < loop.length; i++) {
+    const [x0, z0] = loop[i];
+    const [x1, z1] = loop[(i + 1) % loop.length];
+    quad(V(x0, 0, z0), V(x0, d, z0), V(x1, d, z1), V(x1, 0, z1));
+  }
+  const pos = new Float32Array(tris.length * 3);
+  let i = 0; for (const v of tris) { pos[i++] = v[0]; pos[i++] = v[1]; pos[i++] = v[2]; }
+  return buildTopology({ getAttribute: (k) => (k === 'position' ? { array: pos } : null) });
+}
+
 // --- rotations (column-major 3x3, THREE.Matrix3.elements order) -----------
 const d2r = (d) => (d * Math.PI) / 180;
 export const rotX = (d) => { const c = Math.cos(d2r(d)), s = Math.sin(d2r(d)); return [1, 0, 0, 0, c, s, 0, -s, c]; };
@@ -110,18 +202,29 @@ export function insideCount(topo, rot, offset, tris) {
 }
 
 /** Is the triangle-soup a closed surface (every undirected edge shared evenly)? */
-export function isClosed(tris) {
+export function isClosed(tris, { allowComposite = true } = {}) {
   if (!tris.length) return true;
-  const key = (p) => `${Math.round(p[0] * 1e3)},${Math.round(p[1] * 1e3)},${Math.round(p[2] * 1e3)}`;
-  const edges = new Map();
+  const coord = (v) => (Math.round(v * 1e4) / 1e4 + 0).toFixed(4);
+  const key = (p) => `${coord(p[0])},${coord(p[1])},${coord(p[2])}`;
+  const undirected = new Map();
+  const directed = new Map();
   for (let i = 0; i < tris.length; i += 3) {
     for (let e = 0; e < 3; e++) {
       const a = key(tris[i + e]), b = key(tris[i + (e + 1) % 3]);
-      const k = a < b ? `${a}|${b}` : `${b}|${a}`;
-      edges.set(k, (edges.get(k) ?? 0) + 1);
+      if (a === b) return false;
+      const u = a < b ? `${a}|${b}` : `${b}|${a}`;
+      undirected.set(u, (undirected.get(u) ?? 0) + 1);
+      const d = `${a}->${b}`;
+      directed.set(d, (directed.get(d) ?? 0) + 1);
     }
   }
-  for (const c of edges.values()) if (c % 2 !== 0) return false;
+  for (const c of undirected.values()) {
+    if (allowComposite ? c % 2 !== 0 : c !== 2) return false;
+  }
+  for (const [d, count] of directed.entries()) {
+    const [a, b] = d.split('->');
+    if (directed.get(`${b}->${a}`) !== count) return false;
+  }
   return true;
 }
 

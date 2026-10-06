@@ -1,5 +1,25 @@
 # Cloudflare static-asset headers. The STEP kernel (~2.9 MB brotli) never changes
 # under a given path -- its folder name carries the version, so upgrading it is a
 # new URL -- so browsers may keep it for a year instead of re-checking each visit.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/*.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*.css
+  Cache-Control: public, max-age=0, must-revalidate
+
 /vendor/occt-import-js-0.0.23/*
   Cache-Control: public, max-age=31536000, immutable
+
+/vendor/three/*
+  Cache-Control: public, max-age=31536000, immutable
+

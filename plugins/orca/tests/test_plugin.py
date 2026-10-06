@@ -214,9 +214,13 @@ def test_errors_are_reported_not_raised(monkeypatch):
 
 
 def test_plugin_registers_its_capability():
-    ORCA.registered.clear()
-    SF.SupportFinsPlugin().register_capabilities()
-    assert ORCA.registered == [SF.SupportFinsSlicing]
+    orig = list(ORCA.registered)
+    try:
+        ORCA.registered.clear()
+        SF.SupportFinsPlugin().register_capabilities()
+        assert ORCA.registered == [SF.SupportFinsSlicing]
+    finally:
+        ORCA.registered[:] = orig
 
 
 def test_mirrored_part_gets_the_same_fins_as_its_twin():
@@ -237,3 +241,37 @@ def test_mirrored_part_gets_the_same_fins_as_its_twin():
     _, s_ref = SF.compute_fins(SF.posed_part_soup(ref), 0.2, dict(SF._DEFAULTS))
     assert s_ref["braces"] >= 1
     assert (s_mir["braces"], s_mir["tines"]) == (s_ref["braces"], s_ref["tines"])
+
+
+def test_layer_zero_fin_surface_type_is_bottom():
+    layer0 = fake_orca.Layer(slice_z=0.1, print_z=0.2, height=0.2)
+    poly = fake_orca.ExPolygon(np.array([[0, 0], [10_000_000, 0], [10_000_000, 10_000_000], [0, 10_000_000]]), [])
+    added = SF.add_fins_to_layer(layer0, [poly])
+    assert added == 1
+    assert len(layer0.regions()[0].slices.surfaces) == 1
+    assert layer0.regions()[0].slices.surfaces[0].surface_type == ORCA.host.SurfaceType.stBottom
+
+    layer1 = fake_orca.Layer(slice_z=0.3, print_z=0.4, height=0.2)
+    added1 = SF.add_fins_to_layer(layer1, [poly])
+    assert added1 == 1
+    assert layer1.regions()[0].slices.surfaces[0].surface_type == ORCA.host.SurfaceType.stInternal
+
+
+def test_multi_region_fin_injection_targets_overlapping_region():
+    layer = fake_orca.Layer(slice_z=0.3, print_z=0.4, height=0.2)
+    r1 = fake_orca.LayerRegion()
+    r2 = fake_orca.LayerRegion()
+    p1 = fake_orca.ExPolygon(np.array([[0, 0], [10_000_000, 0], [10_000_000, 10_000_000], [0, 10_000_000]]), [])
+    r1.slices.set([p1], ORCA.host.SurfaceType.stInternal)
+    p2 = fake_orca.ExPolygon(np.array([[50_000_000, 0], [60_000_000, 0], [60_000_000, 10_000_000], [50_000_000, 10_000_000]]), [])
+    r2.slices.set([p2], ORCA.host.SurfaceType.stInternal)
+    layer._regions = [r1, r2]
+
+    fin2 = fake_orca.ExPolygon(np.array([[55_000_000, 5_000_000], [65_000_000, 5_000_000], [65_000_000, 15_000_000], [55_000_000, 15_000_000]]), [])
+    added = SF.add_fins_to_layer(layer, [fin2])
+    assert added == 1
+    assert len(r1.slices.surfaces) == 1
+    assert len(r2.slices.surfaces) >= 1
+    c = np.asarray(r2.slices.surfaces[0].expolygon.contour.as_array())
+    assert c[:, 0].max() >= 60_000_000
+

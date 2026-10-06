@@ -7,6 +7,7 @@
 // as perp_hole.test.js, so this runs without the gitignored stress STLs.)
 
 import { fins, holedPlateTopo, analyze, rotX, isClosed, assert } from './_util.js';
+import { filteredTriangles } from '../web/ui/remove.js';
 
 // The same build the UI runs in Auto mode.
 function build() {
@@ -71,23 +72,38 @@ Deno.test('per-fin: filtering out one fin excludes exactly its triangles and no 
   const k = Math.min(1, b.fins.length - 1);
   const removed = b.fins[k];
   const removedSet = new Set([removed.id]);
-  // Replicate app.js filteredTriangles: walk records, skip removed, keep the rest.
-  const kept = [];
+  // Test web/ui/remove.js filteredTriangles directly:
+  const { tris: kept, map } = filteredTriangles(b.triangles, b.fins, removedSet);
   const removedVerts = new Set();
-  for (let i = 0; i < b.fins.length; i++) {
-    if (removedSet.has(b.fins[i].id)) {
-      for (const [lo, hi] of b.fins[i].triRanges) for (let t = lo; t < hi; t++) removedVerts.add(t);
-    } else {
-      for (const [lo, hi] of b.fins[i].triRanges) for (let t = lo; t < hi; t++) kept.push(b.triangles[t]);
-    }
+  for (const [lo, hi] of (removed.triRanges ?? [])) {
+    for (let t = lo; t < hi; t++) removedVerts.add(t);
   }
   // The kept set is exactly the vertices NOT in the removed fin's ranges.
   assert(kept.length === n - removedVerts.size,
     `kept ${kept.length} vs expected ${n - removedVerts.size}`);
+  assert(map.length === kept.length / 3, 'map length matches triangle count');
   // Sanity: the kept geometry is still watertight (removing a disjoint closed
   // solid doesn't open edges on the rest).
   assert(isClosed(kept), 'kept fins are not watertight after removing one fin');
   // And re-adding the removed fin's vertices back makes the whole mesh closed again.
   const allBack = [...kept, ...finVerts(b.triangles, removed)];
   assert(isClosed(allBack), 'full mesh not watertight after restoring the removed fin');
+});
+
+Deno.test('CAD-PERF-02: finworker produces flatTris Float32Array and preserves triangles', async () => {
+  const topo = holedPlateTopo(40, 30, 4, 9, 9);
+  const rot = rotX(45);
+  const res = analyze(topo, 45, rot);
+  const w = new Worker(new URL('../web/finworker.js', import.meta.url), { type: 'module' });
+  const data = await new Promise((resolve, reject) => {
+    w.onmessage = (e) => resolve(e.data);
+    w.onerror = (e) => reject(e);
+    w.postMessage({ id: 101, topology: topo, result: res, rot: rot, opts: { mode: 'auto', bedPad: true, tines: true } });
+  });
+  w.terminate();
+  assert(data.id === 101, 'job id preserved');
+  assert(data.built, 'built result returned');
+  assert(Array.isArray(data.built.triangles), 'triangles array preserved for backward compatibility');
+  assert(data.built.flatTris instanceof Float32Array, 'flatTris is a Float32Array');
+  assert(data.built.flatTris.length === data.built.triangles.length * 3, 'flatTris length matches triangles * 3');
 });

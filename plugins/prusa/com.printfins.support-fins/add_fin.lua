@@ -47,12 +47,13 @@ local TINE_FRAC = 0.8    -- tine rib length as a fraction of the fin length
 local TOP_FRAC  = 0.6    -- tines occupy the lower this-fraction of the fin
 
 function execute(opts)
+    opts = opts or {}
     local shapes = require('shapes')
 
-    local length = math.max(6, opts.length)
-    local wall_t = math.max(0.4, opts.wall_thickness)
-    local foot_w = math.max(wall_t, opts.foot_width)
-    local fin_h  = math.max(TIP_H + 4, opts.fin_height)
+    local length = math.max(6, tonumber(opts.length) or 25)
+    local wall_t = math.max(0.4, tonumber(opts.wall_thickness) or 0.8)
+    local foot_w = math.max(wall_t, tonumber(opts.foot_width) or 4.0)
+    local fin_h  = math.max(TIP_H + 4, tonumber(opts.fin_height) or 30)
     local wall_h = fin_h - TIP_H            -- thick wall stops where the tip begins
 
     -- One flat object space, corner-origin cubes (spans [0,w]x[0,d]x[0,h]).

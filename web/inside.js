@@ -461,8 +461,8 @@ export function insidePart(topo, rot, offset, qx, qy, qz) {
   // inverse of an orthonormal rotation is its transpose
   const x = qx - offset.x, y = qy - offset.y, z = qz - offset.z;
   const ox = rot[0] * x + rot[1] * y + rot[2] * z;
-  const oy = rot[3] * x + rot[4] * y + rot[5] * z;
-  const oz = rot[6] * x + rot[7] * y + rot[8] * z;
+  const oy = rot[3] * x + rot[4] * y + rot[5] * z + 1.41421356e-6;
+  const oz = rot[6] * x + rot[7] * y + rot[8] * z + 2.71828182e-6;
 
   const c = grid.cell(oy, oz);
   let crossings = 0;

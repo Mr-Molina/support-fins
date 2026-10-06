@@ -28,18 +28,20 @@ const volumeSelect = el('volume');
 const customRow = el('custom-vol');
 const customInputs = ['vx', 'vy', 'vz'].map(el);
 
-for (const v of VOLUMES) volumeSelect.add(new Option(volLabel(v), volLabel(v)));
-volumeSelect.add(new Option('Custom…', 'custom'));
+if (typeof Option !== 'undefined' && volumeSelect?.add) {
+  for (const v of VOLUMES) volumeSelect.add(new Option(volLabel(v), volLabel(v)));
+  volumeSelect.add(new Option('Custom…', 'custom'));
+}
 
 let volume = { ...DEFAULT_VOLUME };
 try {
-  const saved = JSON.parse(localStorage.getItem(VOLUME_STORE) || 'null');
+  const saved = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem(VOLUME_STORE) || 'null') : null;
   if (saved && saved.x > 0 && saved.y > 0 && saved.z > 0) volume = saved;
 } catch { /* corrupt or unavailable storage is not worth failing over */ }
 
 const isPreset = (v) => VOLUMES.some((p) => volLabel(p) === volLabel(v));
-volumeSelect.value = isPreset(volume) ? volLabel(volume) : 'custom';
-customInputs.forEach((inp, i) => { inp.value = String([volume.x, volume.y, volume.z][i]); });
+if (volumeSelect) volumeSelect.value = isPreset(volume) ? volLabel(volume) : 'custom';
+customInputs.forEach((inp, i) => { if (inp) inp.value = String([volume.x, volume.y, volume.z][i]); });
 
 export const currentVolume = () => volume;
 
@@ -65,6 +67,13 @@ volumeSelect.addEventListener('change', () => {
 for (const inp of customInputs) {
   inp.addEventListener('input', () => {
     const [x, y, z] = customInputs.map((n) => Number(n.value));
-    if (x > 0 && y > 0 && z > 0) { volume = { x, y, z }; applyVolume(); }
+    if (x > 0 && y > 0 && z > 0) {
+      volume = {
+        x: Math.max(10, Math.min(5000, x)),
+        y: Math.max(10, Math.min(5000, y)),
+        z: Math.max(10, Math.min(5000, z)),
+      };
+      applyVolume();
+    }
   });
 }

@@ -98,7 +98,7 @@ end
 chk("every tine joins the wall",                all_join)
 chk("every tine juts off the +X gripping face", all_jut)
 chk("tines sit within the fin height",          in_height)
-chk("tines span low-to-high (a comb up the face)", highest - lowest > 3)
+chk("tines span low-to-high (a comb up the face)", highest - lowest >= 10)
 
 -- denser near base: gap between tine 1&2 smaller than between last two
 table.sort(tines, function(a,b) return a.z0 < b.z0 end)
@@ -120,4 +120,4 @@ print("Add-a-Fin checks (tines off):")
 chk("tine comb removed when tines off",         n == 0)
 
 print(fail == 0 and "\nALL ADD-A-FIN CHECKS PASS" or ("\n" .. fail .. " CHECK(S) FAILED"))
-os.exit(fail)
+if fail > 0 then os.exit(fail) end

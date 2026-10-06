@@ -13,11 +13,22 @@ importScripts(`${OCCT}occt-import-js.js`);
 
 const kernel = occtimportjs({ locateFile: (f) => `${OCCT}${f}` });
 
+self.onerror = (e) => {
+  postMessage({ error: e?.message || String(e) });
+};
+self.onunhandledrejection = (e) => {
+  postMessage({ error: e?.reason?.message || String(e?.reason || e) });
+};
+
 onmessage = async (e) => {
   try {
     const occt = await kernel;
     if (e.data.warm) return;
     const r = occt.ReadStepFile(e.data.bytes, e.data.params);
+    if (!r || !r.success) {
+      postMessage({ id: e.data.id, error: 'the CAD kernel could not read this STEP file' });
+      return;
+    }
     const transfer = [];
     for (const m of r.meshes ?? []) {
       m.attributes.position.array = new Float32Array(m.attributes.position.array);
@@ -26,8 +37,8 @@ onmessage = async (e) => {
       delete m.brep_faces;
       transfer.push(m.attributes.position.array.buffer, m.index.array.buffer);
     }
-    postMessage(r, transfer);
+    postMessage({ id: e.data.id, ...r }, transfer);
   } catch (err) {
-    if (!e.data.warm) postMessage({ error: String(err?.message ?? err) });
+    if (!e.data.warm) postMessage({ id: e?.data?.id, error: String(err?.message ?? err) });
   }
 };

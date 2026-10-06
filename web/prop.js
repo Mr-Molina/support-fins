@@ -1346,12 +1346,21 @@ function biteDirsAt(topo, rot, offset, px, py, pz) {
   const seat = (o) => [rot[0] * pos[o] + rot[3] * pos[o + 1] + rot[6] * pos[o + 2] + offset.x,
                        rot[1] * pos[o] + rot[4] * pos[o + 1] + rot[7] * pos[o + 2] + offset.y,
                        rot[2] * pos[o] + rot[5] * pos[o + 1] + rot[8] * pos[o + 2] + offset.z];
-  const d2 = new Float64Array(nF);
   let best = Infinity;
+  let tiedFaces = [], tiedD = [];
   for (let f = 0; f < nF; f++) {
     const o = f * 9;
-    d2[f] = ptTriDist2(P, seat(o), seat(o + 3), seat(o + 6));
-    if (d2[f] < best) best = d2[f];
+    const d = ptTriDist2(P, seat(o), seat(o + 3), seat(o + 6));
+    const tol = best * 1e-9 + 1e-12;
+    if (d < best - tol || !(best < Infinity)) {
+      best = d;
+      tiedFaces = [f];
+      tiedD = [d];
+    } else if (d <= best + tol) {
+      if (d < best) best = d;
+      tiedFaces.push(f);
+      tiedD.push(d);
+    }
   }
   if (!(best < Infinity)) return [];
   // TIES. At an inside corner two faces can be EXACTLY equidistant (a step's
@@ -1362,8 +1371,9 @@ function biteDirsAt(topo, rot, offset, px, py, pz) {
   // take the first whose bite lands in the part.
   const tol = best * 1e-9 + 1e-12;
   const dirs = [];
-  for (let f = 0; f < nF; f++) {
-    if (d2[f] > best + tol) continue;
+  for (let i = 0; i < tiedFaces.length; i++) {
+    if (tiedD[i] > best + tol) continue;
+    const f = tiedFaces[i];
     const nx = nrm[f * 3], ny = nrm[f * 3 + 1], nz = nrm[f * 3 + 2];
     // seated normal, then INWARD (into the part) = negated, horizontal component only
     const sx = rot[0] * nx + rot[3] * ny + rot[6] * nz;

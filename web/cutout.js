@@ -117,8 +117,9 @@ function clipPoly(poly, f) {
   for (let i = 0; i < poly.length; i++) {
     const A = poly[i], B = poly[(i + 1) % poly.length];
     const fa = f(A), fb = f(B);
-    if (fa >= 0) out.push(A);
-    if ((fa >= 0) !== (fb >= 0)) {
+    const aIn = fa >= 0, bIn = fb >= 0;
+    if (aIn) out.push(A);
+    if (aIn !== bIn && fa !== 0 && fb !== 0) {
       const t = fa / (fa - fb);
       out.push([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t]);
     }
@@ -411,7 +412,14 @@ export function cutWall(st, full, out, wall) {
     const A = st[i], B = st[i + 1];
     const lerp = (u, v) => u + (v - u) * t;
     let sx = lerp(A.sx, B.sx), sy = lerp(A.sy, B.sy);
-    const n = Math.hypot(sx, sy); sx /= n; sy /= n;
+    const n = Math.hypot(sx, sy);
+    if (n > 1e-9) {
+      sx /= n;
+      sy /= n;
+    } else {
+      sx = t < 0.5 ? A.sx : B.sx;
+      sy = t < 0.5 ? A.sy : B.sy;
+    }
     return { x: lerp(A.p[0], B.p[0]), y: lerp(A.p[1], B.p[1]), sx, sy };
   };
   const e = CUT.eps;

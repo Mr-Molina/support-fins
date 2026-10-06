@@ -21,6 +21,9 @@ const PER_TRI = 50;
  */
 export function writeBinarySTL(tris, name = 'Support Fins') {
   const count = Math.floor(tris.length / 3);
+  if (count > 0xffffffff / PER_TRI || count > 80_000_000) {
+    throw new Error('mesh exceeds maximum 32-bit binary STL facet capacity');
+  }
   const buf = new ArrayBuffer(HEADER + 4 + count * PER_TRI);
   const view = new DataView(buf);
 

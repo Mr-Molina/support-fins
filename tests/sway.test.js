@@ -13,7 +13,7 @@ import { block, blockTopo, buildTopology, analyze, fins, insideCount, isClosed, 
 
 const topoOf = (pos) => buildTopology({ getAttribute: (k) => (k === 'position' ? { array: pos } : null) });
 
-const WEB = new URL('../web/', import.meta.url).pathname;
+const WEB = new URL('../web/', import.meta.url).href;
 const sway = await import(`${WEB}sway.js`);
 const { insidePart } = await import(`${WEB}inside.js`);
 
@@ -55,6 +55,15 @@ Deno.test('sway: the rib never fuses into the part -- only tines bite in', () =>
   const inside = insideCount(topo, ID, res.offset,
     s.triangles.map((v) => [v[0], v[1], Math.max(v[2], 1e-3)]));
   assert(inside === 0, `${inside} rib verts are inside the part (it should stand off by the gap)`);
+});
+
+Deno.test('GEOM-LOGIC-001: rib verts exactly at z = 0 bed interface do not trigger false inside crossings', () => {
+  const { topo, res } = post();
+  const s = sway.buildSwayBraces(topo, res, ID, { tines: false, layerHeight: LAYER });
+  assert(s.count >= 2, 'no braces to check');
+  // Vertices directly at z = 0 without artificial 1e-3 lift
+  const inside = insideCount(topo, ID, res.offset, s.triangles);
+  assert(inside === 0, `${inside} rib verts are inside the part at z = 0`);
 });
 
 Deno.test('sway: every tine is one layer, on the grid, and bites into the part', () => {

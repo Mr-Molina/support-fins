@@ -47,40 +47,49 @@ let lastSize = null;
 // The user rotates. Always. Auto-orientation may suggest, never apply -- the
 // spike's strength-optimal pose for one hub was 155mm tall balanced on a needle:
 // geometrically valid, unprintable.
-const gizmo = new TransformControls(camera, renderer.domElement);
-gizmo.setMode('rotate');
-gizmo.setSize(0.85);
-scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
-const dragFrom = new THREE.Quaternion();   // pose at drag start: did the drag turn it?
-gizmo.addEventListener('dragging-changed', (e) => {
-  controls.enabled = !e.value;
-  if (e.value && part) dragFrom.copy(part.quaternion);
-  if (!e.value) {
-    el('rot-delta').textContent = '';
-    if (part && !part.quaternion.equals(dragFrom)) clearSuggestionMark();
-    // Drag released: reseat onto the plate now the pivot is allowed to move again
-    // (shade() holds part.position steady WHILE dragging -- see the note there --
-    // so this is the frame that actually drops the turned part back down).
-    shade();
-    // Fins are rebuilt when the drag ENDS, not during it. Placement runs the
-    // exact confirmation passes -- containment, clearance, per-tine bite -- and
-    // costs ~100ms on a 43k-face part, which is fine once and unusable at 60fps.
-    // The overhang shading still updates live at 1-6ms, so the diagnosis the
-    // user is steering by never stalls.
-    if (finsVisible) refreshFins();
-  }
-});
-gizmo.addEventListener('objectChange', () => {
-  showDelta(gizmo.axis, gizmo.rotationAngle);
-  requestShade();
-});
+const gizmo = renderer ? new TransformControls(camera, renderer.domElement) : {
+  attach: () => {}, getHelper: () => ({ visible: false }), setMode: () => {}, setSize: () => {},
+  addEventListener: () => {}, setRotationSnap: () => {}, dragging: false, enabled: false, axis: null,
+};
+if (renderer) {
+  gizmo.setMode('rotate');
+  gizmo.setSize(0.85);
+  scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
+  const dragFrom = new THREE.Quaternion();   // pose at drag start: did the drag turn it?
+  gizmo.addEventListener('dragging-changed', (e) => {
+    controls.enabled = !e.value;
+    if (e.value && part) {
+      histPush();
+      dragFrom.copy(part.quaternion);
+    }
+    if (!e.value) {
+      el('rot-delta').textContent = '';
+      if (part && !part.quaternion.equals(dragFrom)) clearSuggestionMark();
+      // Drag released: reseat onto the plate now the pivot is allowed to move again
+      // (shade() holds part.position steady WHILE dragging -- see the note there --
+      // so this is the frame that actually drops the turned part back down).
+      shade();
+      // Fins are rebuilt when the drag ENDS, not during it (triggered inside shade()).
+      // Placement runs the exact confirmation passes -- containment, clearance,
+      // per-tine bite -- and costs ~100ms on a 43k-face part, which is fine once
+      // and unusable at 60fps. The overhang shading still updates live at 1-6ms,
+      // so the diagnosis the user is steering by never stalls.
+    }
+  });
+  gizmo.addEventListener('objectChange', () => {
+    showDelta(gizmo.axis, gizmo.rotationAngle);
+    requestShade();
+  });
 
-// 5 degrees, not 15: a coarse snap is what makes a drag feel like it is
-// juddering rather than turning. Shift releases it entirely for fine work.
-const SNAP = THREE.MathUtils.degToRad(5);
-gizmo.setRotationSnap(SNAP);
-addEventListener('keydown', (e) => { if (e.key === 'Shift') gizmo.setRotationSnap(null); });
-addEventListener('keyup', (e) => { if (e.key === 'Shift') gizmo.setRotationSnap(SNAP); });
+  // 5 degrees, not 15: a coarse snap is what makes a drag feel like it is
+  // juddering rather than turning. Shift releases it entirely for fine work.
+  const SNAP = THREE.MathUtils.degToRad(5);
+  gizmo.setRotationSnap(SNAP);
+  if (typeof addEventListener !== 'undefined') {
+    addEventListener('keydown', (e) => { if (e.key === 'Shift') gizmo.setRotationSnap(null); });
+    addEventListener('keyup', (e) => { if (e.key === 'Shift') gizmo.setRotationSnap(SNAP); });
+  }
+}
 
 /**
  * Coalesce re-analysis to one per frame. A high-polling-rate mouse fires
@@ -113,6 +122,9 @@ const SHADE = {
  * z=0. Returns the measured size so the caller can report it.
  */
 export function setPart(geometry, filename) {
+  const pos = geometry?.getAttribute?.('position');
+  if (!pos || pos.count < 3) throw new Error('Cannot load empty or corrupted mesh geometry.');
+
   if (part) {
     part.geometry.dispose();
     scene.remove(part);
@@ -158,6 +170,11 @@ export function setPart(geometry, filename) {
 
   // A new part starts with no hand-drawn walls and a fresh print-space cache.
   drawnWalls = [];
+  if (drawnMesh) { scene.remove(drawnMesh); drawnMesh.geometry.dispose(); drawnMesh = null; }
+  if (selMesh) { scene.remove(selMesh); selMesh.geometry.dispose(); selMesh = null; }
+  selectedWall = null;
+  drawnTris = [];
+  syncSelection();
   // Per-fin removals are keyed by a content signature that can coincidentally
   // match a different model's fins, so they must NOT carry across parts -- clear
   // them here alongside the walls, or loading a new STL silently drops fins.
@@ -479,8 +496,8 @@ const drawDot = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), guideMat(0x5
 // crosshair is the precise aim point, this dot just shows the surface hit.
 const drawCursor = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14),
   new THREE.MeshBasicMaterial({ color: 0xcffbe4, depthTest: false, transparent: true, opacity: 0.6 }));
-const bandGeom = new THREE.BufferGeometry()
-  .setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const bandGeom = new THREE.BufferGeometry();
+bandGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
 const drawBand = new THREE.Line(bandGeom,
   new THREE.LineBasicMaterial({ color: 0x6dffab, depthTest: false, transparent: true }));
 drawBand.frustumCulled = false;   // its endpoints move every frame; stale bounds would cull it
@@ -546,7 +563,7 @@ export function clearPreview() {
 }
 
 /** Rebuild the committed drawn walls for the current orientation. */
-function rebuildDrawn() {
+export function rebuildDrawn() {
   if (drawnMesh) { scene.remove(drawnMesh); drawnMesh.geometry.dispose(); drawnMesh = null; }
   drawnTris = [];
   if (!drawShown() || !topology || !lastResult) { syncSelection(); return; }
@@ -683,8 +700,10 @@ function updatePreview(hitPoint) {
   const aWorld = part.localToWorld(drawStart.clone());
   drawDot.position.copy(aWorld);
   drawDot.visible = true;
-  bandGeom.setFromPoints([aWorld, hitPoint]);
-  bandGeom.attributes.position.needsUpdate = true;
+  const bandPos = bandGeom.attributes.position;
+  bandPos.setXYZ(0, aWorld.x, aWorld.y, aWorld.z);
+  bandPos.setXYZ(1, hitPoint.x, hitPoint.y, hitPoint.z);
+  bandPos.needsUpdate = true;
   drawBand.visible = true;
 
   // Build the ghost wall at most once per frame: one wall over the whole part is
@@ -1240,14 +1259,15 @@ el('sway').closest('label').addEventListener('click', (e) => e.stopPropagation()
 
 /** Refill each section's collapsed recap from the controls' current values. */
 export function syncSectionSums() {
-  const sel = (id) => el(id).selectedOptions[0]?.textContent.split(' —')[0] ?? '';
+  const sel = (id) => el(id)?.selectedOptions?.[0]?.textContent?.split(' —')[0] ?? '';
   el('sum-setup').textContent = `${sel('material')} · ${sel('fin-mode')}`;
   const grip = el('tine-density').valueAsNumber;
   el('sum-tines').textContent = el('tines').checked
     ? `${grip <= 20 ? 'light' : grip >= 80 ? 'firm' : 'medium'} grip · ${el('layer-height').value} mm`
     : 'off';
+  const padText = el('bed-pad')?.selectedOptions?.[0]?.textContent?.toLowerCase() ?? '';
   el('sum-clearances').textContent =
-    `${el('gap').value} mm gap · pad ${el('bed-pad').selectedOptions[0].textContent.toLowerCase()}`;
+    `${el('gap').value} mm gap · pad ${padText}`;
   const cut = el('cutout').value;
   el('sum-walls').textContent = cut === 'none' ? 'solid' : `${sel('cutout').toLowerCase()} cutouts`;
   el('sum-sway').textContent = el('sway').checked
@@ -1375,7 +1395,18 @@ function pickFace(ev) {
   return hit && hit.faceIndex != null ? hit : null;
 }
 
-renderer.domElement.addEventListener('pointermove', (ev) => {
+let pickMovePending = null;
+if (renderer?.domElement) {
+  renderer.domElement.addEventListener('pointermove', (ev) => {
+    pickMovePending = ev;
+    requestAnimationFrame(processPointerMove);
+  });
+}
+
+function processPointerMove() {
+  const ev = pickMovePending;
+  pickMovePending = null;
+  if (!ev) return;
   // Remove-fins mode: hover lights the fin a click would drop, in red.
   if (removeActive()) {
     hoverFace.visible = false;
@@ -1419,83 +1450,87 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   for (let i = 0; i < 9; i++) pos.array[i] = src[o + i];
   pos.needsUpdate = true;
   hoverGeom.computeBoundingSphere();
-});
+}
 
-renderer.domElement.addEventListener('pointerleave', () => {
-  hoverFace.visible = false;
-  clearFinHover();
-});
+if (renderer?.domElement) {
+  renderer.domElement.addEventListener('pointerleave', () => {
+    pickMovePending = null;
+    hoverFace.visible = false;
+    clearFinHover();
+  });
 
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  pressAt = { x: e.clientX, y: e.clientY };
-});
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    pressAt = { x: e.clientX, y: e.clientY };
+  });
 
-renderer.domElement.addEventListener('pointerup', (e) => {
-  const from = pressAt;
-  pressAt = null;
-  if (!from || !part || !topology) return;
+  renderer.domElement.addEventListener('pointerup', (e) => {
+    const from = pressAt;
+    pressAt = null;
+    if (!from || !part || !topology) return;
+    if (e.button !== 0) return;
 
-  // a drag is an orbit, not a pick
-  if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
+    // a drag is an orbit, not a pick
+    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
 
-  // Remove-fins mode: one click drops just the fin under the pointer.
-  if (removeActive()) {
-    clickRemove(e);
-    return;
-  }
-
-  // Draw / Suggest "+ Add": first click sets the start of a wall on the overhang,
-  // second commits it. A breakaway wall sweeps under the line between the two
-  // points, so the user draws it straight onto the red overhang -- no face gate.
-  if (drawActive()) {
-    // A click on a support you placed selects it (for Delete / Remove selected),
-    // unless a wall is half-drawn -- then the click is its second point.
-    if (!drawStart) {
-      const sup = pickSupport(e);
-      if (sup) { selectWall(sup); return; }
-    }
-    const hit = pickFace(e);
-    if (!hit) return;
-    if (selectedWall) { selectedWall = null; syncSelection(); }
-    // With Sway braces on, a single click on an UPRIGHT side stands a brace there;
-    // a click on anything else still starts a two-point wall as before.
-    if (!drawStart && el('sway').checked
-        && faceIsUpright(topology, rotM3.elements, hit.faceIndex)) {
-      placeSway(hit);
+    // Remove-fins mode: one click drops just the fin under the pointer.
+    if (removeActive()) {
+      clickRemove(e);
       return;
     }
-    if (!drawStart) {
-      drawStart = part.worldToLocal(hit.point.clone());
-      drawMsg = '';
-      updatePreview(hit.point);
-      updateReadout(lastBuilt);
-    } else {
-      placeSecondPoint(hit.point);
+
+    // Draw / Suggest "+ Add": first click sets the start of a wall on the overhang,
+    // second commits it. A breakaway wall sweeps under the line between the two
+    // points, so the user draws it straight onto the red overhang -- no face gate.
+    if (drawActive()) {
+      // A click on a support you placed selects it (for Delete / Remove selected),
+      // unless a wall is half-drawn -- then the click is its second point.
+      if (!drawStart) {
+        const sup = pickSupport(e);
+        if (sup) { selectWall(sup); return; }
+      }
+      const hit = pickFace(e);
+      if (!hit) return;
+      if (selectedWall) { selectedWall = null; syncSelection(); }
+      // With Sway braces on, a single click on an UPRIGHT side stands a brace there;
+      // a click on anything else still starts a two-point wall as before.
+      if (!drawStart && el('sway').checked
+          && faceIsUpright(topology, rotM3.elements, hit.faceIndex)) {
+        placeSway(hit);
+        return;
+      }
+      if (!drawStart) {
+        drawStart = part.worldToLocal(hit.point.clone());
+        drawMsg = '';
+        updatePreview(hit.point);
+        updateReadout(lastBuilt);
+      } else {
+        placeSecondPoint(hit.point);
+      }
+      return;
     }
-    return;
-  }
 
-  if (gizmo.dragging || gizmo.axis) return;
+    if (gizmo.dragging || gizmo.axis) return;
 
-  // Lay a face flat -- ONLY when armed via the button. Off by default so a stray
-  // viewport click orbits instead of silently discarding a careful rotation.
-  if (!layActive()) return;
-  const hit = pickFace(e);
-  if (!hit) return;
+    // Lay a face flat -- ONLY when armed via the button. Off by default so a stray
+    // viewport click orbits instead of silently discarding a careful rotation.
+    if (!layActive()) return;
+    const hit = pickFace(e);
+    if (!hit) return;
 
-  // Snapshot before laying so Ctrl-Z brings the old pose back.
-  histPush();
-  // Use OUR winding-derived normal, not the STL's stored one, for the same
-  // reason the analysis does: exported normals are not trustworthy.
-  const i = hit.faceIndex * 3;
-  faceNormal.set(topology.nrm[i], topology.nrm[i + 1], topology.nrm[i + 2])
-            .applyQuaternion(part.quaternion);
-  layQuat.setFromUnitVectors(faceNormal, DOWN);
-  part.quaternion.premultiply(layQuat);
-  clearSuggestionMark();
-  cancelLay();            // one-shot: disarm after a lay so the next click is safe
-  shade();
-});
+    // Snapshot before laying so Ctrl-Z brings the old pose back.
+    histPush();
+    // Use OUR winding-derived normal, not the STL's stored one, for the same
+    // reason the analysis does: exported normals are not trustworthy.
+    const i = hit.faceIndex * 3;
+    faceNormal.set(topology.nrm[i], topology.nrm[i + 1], topology.nrm[i + 2])
+              .applyQuaternion(part.quaternion);
+    layQuat.setFromUnitVectors(faceNormal, DOWN);
+    part.quaternion.premultiply(layQuat);
+    clearSuggestionMark();
+    cancelLay();            // one-shot: disarm after a lay so the next click is safe
+    shade();
+  });
+}
 
 // Cancel an armed mode / wall-in-progress: Escape, or a right-click in the viewport.
 addEventListener('keydown', (e) => {
@@ -1510,13 +1545,15 @@ addEventListener('keydown', (e) => {
   }
 });
 el('draw-remove').addEventListener('click', removeSelected);
-renderer.domElement.addEventListener('contextmenu', (e) => {
-  if (removeActive()) { e.preventDefault(); cancelRemove(); return; }
-  if (layActive()) { e.preventDefault(); cancelLay(); return; }
-  if (!drawActive()) return;
-  e.preventDefault();
-  if (drawStart) { clearPreview(); updateReadout(lastBuilt); }
-});
+if (renderer?.domElement) {
+  renderer.domElement.addEventListener('contextmenu', (e) => {
+    if (removeActive()) { e.preventDefault(); cancelRemove(); return; }
+    if (layActive()) { e.preventDefault(); cancelLay(); return; }
+    if (!drawActive()) return;
+    e.preventDefault();
+    if (drawStart) { clearPreview(); updateReadout(lastBuilt); }
+  });
+}
 
 const AXES = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0),
                z: new THREE.Vector3(0, 0, 1) };
@@ -1555,9 +1592,9 @@ let frames = 0, last = performance.now();
 
 function tick(now) {
   requestAnimationFrame(tick);
-  controls.update();
+  controls?.update();
   sizeMarkers();
-  renderer.render(scene, camera);
+  renderer?.render(scene, camera);
   if (++frames >= 20) {
     fpsEl.textContent = `${Math.round((frames * 1000) / (now - last))} fps`;
     frames = 0;
@@ -1565,21 +1602,30 @@ function tick(now) {
   }
 }
 
-applyVolume();
-resize();
-frame(new THREE.Vector3(60, 60, 60));
-requestAnimationFrame(tick);
+if (renderer) {
+  applyVolume();
+  resize();
+  frame(new THREE.Vector3(60, 60, 60));
+  requestAnimationFrame(tick);
+}
 
 // debug surface, used to cross-check against the Python probes
-window.__sf = { get part() { return part; }, camera, get topo() { return topology; },
-                analyze, get threshold() { return threshold; },
-                get rot() { return rotM3.elements; },
-                get result() { return lastResult; },
-                get finTris() { return finTris; },
-                get padTris() { return padTris; },
-                get drawnTris() { return drawnTris; },
-                get drawnWalls() { return drawnWalls; },
-                buildFins, findWallPatches, drawnWall, buildExportGeometry };
+if (typeof window !== 'undefined') {
+  window.__sf = { get part() { return part; }, camera, get topo() { return topology; },
+                  analyze, get threshold() { return threshold; },
+                  get rot() { return rotM3.elements; },
+                  get result() { return lastResult; },
+                  get finTris() { return finTris; },
+                  get padTris() { return padTris; },
+                  get drawnTris() { return drawnTris; },
+                  get drawnWalls() { return drawnWalls; },
+                  buildFins, findWallPatches, drawnWall, buildExportGeometry };
+}
 
-const wanted = new URLSearchParams(location.search).get('stl');
-if (wanted) loadURL(wanted).catch((err) => console.error('?stl=', err));
+const wanted = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('stl') : null;
+if (wanted) {
+  loadURL(wanted).catch((err) => {
+    console.error('?stl=', err);
+    alert(`Failed to load ${wanted}:\n${err.message}`);
+  });
+}

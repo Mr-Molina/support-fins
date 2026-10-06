@@ -10,7 +10,7 @@ echo "== luac -p (syntax) =="
 for f in "$BUNDLE"/*.lua; do luac -p "$f" && echo "  ok  $f"; done
 
 echo "== manifest JSON =="
-python3 -c "import json;json.load(open('$BUNDLE/manifest.json'));print('  ok  $BUNDLE/manifest.json')"
+python3 tests/validate_manifest.py "$BUNDLE/manifest.json"
 
 echo "== scan pass (bare engine: no api, no require -- reads info only) =="
 # The slicer runs each file in a bare engine to read `info`. Plugin entry files

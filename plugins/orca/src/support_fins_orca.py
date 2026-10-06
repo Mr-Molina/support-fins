@@ -307,16 +307,20 @@ class SliceFrame:
         w_mm = part_xy_max - part_xy_min
         if w_mm[0] <= 0 or w_mm[1] <= 0:
             raise ValueError("degenerate part footprint")
-        self.sx = (bx1 - bx0) / w_mm[0]
-        self.sy = (by1 - by0) / w_mm[1]
-        self.tx = bx0 - part_xy_min[0] * self.sx
-        self.ty = by0 - part_xy_min[1] * self.sy
         nominal = 1.0 / unit
+        obs_sx = (bx1 - bx0) / w_mm[0]
+        obs_sy = (by1 - by0) / w_mm[1]
         # Shrinkage compensation is a few percent at most. Anything else means the
         # bbox isn't the footprint we think it is -- refuse rather than misplace fins.
-        for s in (self.sx, self.sy):
+        for s in (obs_sx, obs_sy):
             if not (0.9 * nominal < s < 1.1 * nominal):
                 raise ValueError(f"slice frame calibration off: scale {s:.1f} vs nominal {nominal:.1f}")
+        self.sx = nominal
+        self.sy = nominal
+        part_center = 0.5 * (part_xy_min + part_xy_max)
+        slice_center = np.array([0.5 * (bx0 + bx1), 0.5 * (by0 + by1)], dtype=np.float64)
+        self.tx = slice_center[0] - part_center[0] * nominal
+        self.ty = slice_center[1] - part_center[1] * nominal
 
     def to_scaled(self, loop):
         out = np.empty((len(loop), 2), dtype=np.int64)
@@ -409,37 +413,58 @@ def _expoly_bbox(e):
 
 
 def add_fins_to_layer(layer, fin_expolys):
-    """Merge fin ExPolygons into the layer's first region, unioning with any part
+    """Merge fin ExPolygons into the layer's regions, unioning with any part
     slice they overlap (tines are meant to fuse), then re-derive the islands."""
     regions = layer.regions()
     if not regions or not fin_expolys:
         return 0
-    region = regions[0]
-    existing = [(s.surface_type, s.expolygon) for s in region.slices.surfaces]
-    # Copy: set()/append() below invalidate references into the live collection.
-    existing = [(t, orca.host.ExPolygon(e.contour, list(e.holes))) for t, e in existing]
-    boxes = [_expoly_bbox(e) for _, e in existing]
-    added = 0
+
+    layer_id = getattr(layer, 'id', None)
+    is_id_zero = (layer_id() == 0) if callable(layer_id) else (layer_id == 0)
+    is_bottom = is_id_zero or (hasattr(layer, 'print_z') and layer.print_z < 0.35)
+    default_surface_type = orca.host.SurfaceType.stBottom if is_bottom else orca.host.SurfaceType.stInternal
+
+    def _find_region_for_fin(regs, fin_box):
+        for reg in regs:
+            for s in reg.slices.surfaces:
+                if _bbox_overlap(_expoly_bbox(s.expolygon), fin_box):
+                    return reg
+        return regs[0]
+
+    # Group fins by matching region
+    region_fins = {}
     for fin in fin_expolys:
-        merged, mtype, mbox = fin, orca.host.SurfaceType.stInternal, _expoly_bbox(fin)
-        keep, keep_boxes = [], []
-        for (t, e), bb in zip(existing, boxes):
-            if _bbox_overlap(bb, mbox):
-                u = merged.union_ex(e)
-                if len(u) == 1:          # they really overlapped: fuse, keep the part's type
-                    merged, mtype, mbox = u[0], t, _expoly_bbox(u[0])
-                    continue
-            keep.append((t, e))
-            keep_boxes.append(bb)
-        existing, boxes = keep + [(mtype, merged)], keep_boxes + [mbox]
-        added += 1
-    by_type = {}
-    for t, e in existing:
-        by_type.setdefault(t, []).append(e)
-    items = list(by_type.items())
-    region.slices.set(items[0][1], items[0][0])
-    for t, es in items[1:]:
-        region.slices.append(es, t)
+        fbox = _expoly_bbox(fin)
+        target_reg = _find_region_for_fin(regions, fbox) if len(regions) > 1 else regions[0]
+        region_fins.setdefault(target_reg, []).append(fin)
+
+    added = 0
+    for region, fins in region_fins.items():
+        existing = [(s.surface_type, s.expolygon) for s in region.slices.surfaces]
+        # Copy: set()/append() below invalidate references into the live collection.
+        existing = [(t, orca.host.ExPolygon(e.contour, list(e.holes))) for t, e in existing]
+        boxes = [_expoly_bbox(e) for _, e in existing]
+        for fin in fins:
+            merged, mtype, mbox = fin, default_surface_type, _expoly_bbox(fin)
+            keep, keep_boxes = [], []
+            for (t, e), bb in zip(existing, boxes):
+                if _bbox_overlap(bb, mbox):
+                    u = merged.union_ex(e)
+                    if len(u) == 1:          # they really overlapped: fuse, keep the part's type
+                        merged, mtype, mbox = u[0], t, _expoly_bbox(u[0])
+                        continue
+                keep.append((t, e))
+                keep_boxes.append(bb)
+            existing, boxes = keep + [(mtype, merged)], keep_boxes + [mbox]
+            added += 1
+        by_type = {}
+        for t, e in existing:
+            by_type.setdefault(t, []).append(e)
+        items = list(by_type.items())
+        if items:
+            region.slices.set(items[0][1], items[0][0])
+            for t, es in items[1:]:
+                region.slices.append(es, t)
     layer.make_slices()
     return added
 
@@ -521,6 +546,13 @@ class SupportFinsSlicing(orca.slicing.SlicingPipelineCapabilityBase):
         try:
             msg = inject_fins(po, cfg, lh, orca.slicing.unscale(1), log)
         except Exception as e:  # never break a slice over fins; report and carry on
+            global _engine
+            if _engine is not None:
+                try:
+                    _engine.close()
+                except Exception:
+                    pass
+                _engine = None
             log["error"] = f"{type(e).__name__}: {e}"
             _write_log(log)
             return orca.ExecutionResult.failure(orca.PluginResult.RecoverableError,
@@ -543,6 +575,15 @@ def _write_log(entry):
     (support_fins_log.jsonl). Best effort -- never fails the slice."""
     try:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "support_fins_log.jsonl")
+        if os.path.exists(path) and os.path.getsize(path) > 1024 * 1024:
+            bak = path + ".1"
+            try:
+                if os.path.exists(bak):
+                    os.remove(bak)
+                os.rename(path, bak)
+            except OSError:
+                with open(path, "w", encoding="utf-8") as f:
+                    pass
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, default=str) + "\n")
     except Exception:

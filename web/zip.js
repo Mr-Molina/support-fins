@@ -39,6 +39,9 @@ export function zipStore(files) {
   const entries = files.map(({ name, data }) => {
     const nameBytes = enc.encode(name);
     const bytes = typeof data === 'string' ? enc.encode(data) : data;
+    if (bytes.length > 0xffffffff) {
+      throw new Error(`ZIP entry ${name} exceeds 4GB limit`);
+    }
     return { nameBytes, bytes, crc: crc32(bytes), offset: 0 };
   });
 
@@ -48,7 +51,12 @@ export function zipStore(files) {
   let centralSize = 0;
   for (const e of entries) centralSize += 46 + e.nameBytes.length;
 
-  const buf = new ArrayBuffer(localSize + centralSize + 22);
+  const totalSize = localSize + centralSize + 22;
+  if (totalSize > 0xffffffff) {
+    throw new Error('ZIP archive exceeds 4GB limit');
+  }
+
+  const buf = new ArrayBuffer(totalSize);
   const view = new DataView(buf);
   const out = new Uint8Array(buf);
   let o = 0;
@@ -157,10 +165,39 @@ function findExtra(view, start, len, id) {
   return -1;
 }
 
-async function inflateRaw(bytes) {
+export const MAX_UNCOMPRESSED_ENTRY = 512 * 1024 * 1024;
+
+export async function inflateRaw(bytes, expectedSize = 0) {
+  if (expectedSize > MAX_UNCOMPRESSED_ENTRY) {
+    throw new Error('ZIP entry exceeds maximum allowable size');
+  }
   const stream = new Blob([bytes]).stream()
     .pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_UNCOMPRESSED_ENTRY) {
+        await reader.cancel().catch(() => {});
+        throw new Error('decompression limit exceeded (zip bomb protection)');
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    await reader.cancel().catch(() => {});
+    throw err;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
 }
 
 /**
@@ -195,12 +232,15 @@ export async function unzip(bytes) {
 
   const out = new Map();
   for (let i = 0; i < count; i++) {
+    if (o < 0 || o + 46 > view.byteLength) throw new Error('corrupt ZIP central directory (out of bounds)');
     if (view.getUint32(o, true) !== 0x02014b50) throw new Error('corrupt ZIP central directory');
     const method = view.getUint16(o + 10, true);
     const nameLen = view.getUint16(o + 28, true);
     const extraLen = view.getUint16(o + 30, true);
     const commentLen = view.getUint16(o + 32, true);
+    if (o + 46 + nameLen + extraLen + commentLen > view.byteLength) throw new Error('corrupt ZIP central directory entry (out of bounds)');
     const name = dec.decode(bytes.subarray(o + 46, o + 46 + nameLen));
+    let uncompSize = view.getUint32(o + 24, true);
     let compSize = view.getUint32(o + 20, true);
     let localOff = view.getUint32(o + 42, true);
 
@@ -209,29 +249,33 @@ export async function unzip(bytes) {
     // uncompressed, compressed, local-header offset -- but only for the fields
     // that were actually overflowed. So which ones are present is decided by
     // which placeholders we saw, not by the field's own length.
-    const uncompPlaceheld = view.getUint32(o + 24, true) === 0xffffffff;
+    const uncompPlaceheld = uncompSize === 0xffffffff;
     if (uncompPlaceheld || compSize === 0xffffffff || localOff === 0xffffffff) {
       const z = findExtra(view, o + 46 + nameLen, extraLen, 0x0001);
       if (z < 0) throw new Error(`corrupt ZIP: ${name} needs a ZIP64 extra field and has none`);
       let f = z;
-      if (uncompPlaceheld) f += 8;                                     // skip uncompressed size
+      if (uncompPlaceheld) { uncompSize = num(view.getBigUint64(f, true)); f += 8; }
       if (compSize === 0xffffffff) { compSize = num(view.getBigUint64(f, true)); f += 8; }
       if (localOff === 0xffffffff) { localOff = num(view.getBigUint64(f, true)); }
     }
     o += 46 + nameLen + extraLen + commentLen;
 
+    if (uncompSize > MAX_UNCOMPRESSED_ENTRY) throw new Error('ZIP entry exceeds maximum allowable size');
+
     if (name.endsWith('/')) continue;                       // directory marker
 
     // The local header's own name/extra lengths give where the data starts --
     // the extra field routinely differs in length from the central one.
+    if (localOff < 0 || localOff + 30 > view.byteLength) throw new Error(`corrupt local header offset for ${name}`);
     if (view.getUint32(localOff, true) !== 0x04034b50) throw new Error(`corrupt local header for ${name}`);
     const lNameLen = view.getUint16(localOff + 26, true);
     const lExtraLen = view.getUint16(localOff + 28, true);
     const start = localOff + 30 + lNameLen + lExtraLen;
+    if (start < 0 || start + compSize > bytes.length) throw new Error(`corrupt local entry payload for ${name}`);
     const data = bytes.subarray(start, start + compSize);
 
     if (method === 0) out.set(name, data);
-    else if (method === 8) out.set(name, await inflateRaw(data));
+    else if (method === 8) out.set(name, await inflateRaw(data, uncompSize));
     else throw new Error(`unsupported ZIP compression method ${method} for ${name}`);
   }
   return out;

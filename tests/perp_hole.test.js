@@ -59,8 +59,8 @@ Deno.test('END-TO-END: a tilted plate with a bore gets flanking fins, none throu
   const b = fins.buildFins(topo, res, rot, { mode: 'auto', bedPad: true, tines: true });
   assert(b.fins.length >= 2, `bore should yield >=2 flanking fins, got ${b.fins.length}`);
   assert(isClosed(b.triangles), 'flanking fins are not watertight');
-  // NO fin material in the bore's x-band (|x| < 7): nothing was stood in the bore.
-  const inBore = b.triangles.filter((v) => Math.abs(v[0]) < 7).length;
+  // NO fin material in the bore's x-band (|x| < 8.8): nothing was stood in the bore.
+  const inBore = b.triangles.filter((v) => Math.abs(v[0]) < 8.8).length;
   assert(inBore === 0, `${inBore} fin verts landed inside the bore band (a fin was dropped through the hole)`);
   // and material exists on BOTH sides, so it really is flanked
   assert(b.triangles.some((v) => v[0] < -9) && b.triangles.some((v) => v[0] > 9), 'fins are not on both sides of the bore');

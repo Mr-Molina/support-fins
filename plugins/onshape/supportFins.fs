@@ -686,17 +686,15 @@ function supportPart(context is Context, pid is Id, part is Query, bedPlane is P
         {
             opBoolean(context, pid + "merge", {
                         "tools" : supQ,
-                        "operationType" : BooleanOperationType.UNION
+                        "operationType" : BooleanOperationType.UNION,
+                        "allowDisjoint" : true
                     });
             merged = true;
         }
     }
-    if (merged)
-    {
-        // a tine that missed its wall is a loose speck on the plate
-        pruneFloating(context, pid + "finalPrune", env, supQ, 0 * millimeter);
-    }
-    else
+    // a tine that missed its wall is a loose speck on the plate
+    pruneFloating(context, pid + "finalPrune", env, supQ, 0 * millimeter);
+    if (!merged)
     {
         result.warnings = append(result.warnings, "Supports could not be merged; tines are separate bodies.");
     }

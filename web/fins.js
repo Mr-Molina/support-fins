@@ -665,40 +665,6 @@ function buildFin(p0, out, span, topo, rot, offset, opts = {}) {
   };
 }
 
-/**
- * Apply the page's clearance settings to FIN / PROP / PAD.
- *
- * WHY THIS IS A PARAMETER AND NOT JUST A MODULE EDIT. app.js sets these objects
- * directly (applyMaterial for the PLA/PETG profiles, the Support gap and Pad grip
- * fields) and that works for anything it builds itself. But the real build runs in
- * finworker.js, a module Worker with its OWN instance of fins.js and prop.js: module
- * state does not cross a Worker boundary, so everything the page set stayed on the
- * page. PETG picked in Auto mode therefore printed PLA's clearances -- silently, since
- * the numbers on screen were right and only the geometry disagreed.
- *
- * So the values travel WITH the build request (opts.tunables, structured-cloned like
- * every other option) and are applied here, in whichever instance is doing the work.
- * Unknown or non-finite entries are ignored, and calling this with nothing leaves the
- * defaults alone -- an old caller that doesn't pass tunables behaves exactly as before.
- */
-export function applyTunables(t) {
-  if (!t) return;
-  const set = (obj, key, v) => { if (Number.isFinite(v)) obj[key] = v; };
-  set(FIN, 'gap', t.finGap);
-  set(FIN, 'tineBite', t.tineBite);
-  set(FIN, 'padH', t.padH);
-  set(PAD, 'grab', t.padGrab);
-  if (['auto', 'light', 'sure', 'custom'].includes(t.padStyle)) PAD.style = t.padStyle;
-  if (t.padCustom) for (const k of Object.keys(PAD.custom)) set(PAD.custom, k, t.padCustom[k]);
-  set(PROP, 'gap', t.propGap);
-  // The wedge keeps its own copy of the clearance, so the Support gap field and the
-  // PETG profile never reached it -- not even on the main thread, where everything
-  // else worked. One clearance, applied everywhere it is spelled.
-  set(PERP, 'gap', t.propGap);
-  // Not a clearance, but module state with the same Worker problem.
-  if (CUTOUT_PATTERNS.includes(t.cutout)) CUT.pattern = t.cutout;
-}
-
 export const PAD = {
   cell: 1.2,        // mm; radial vertex spacing across the conforming oval disc
   grab: 0.05,       // mm the pad rises PAST the part underside to bite in near the
@@ -757,6 +723,81 @@ export const PAD = {
                     // samples it (the 1.2mm oval cells interpolate across it)
 };
 
+const PERP = {
+  th: 1.2,        // wedge thickness (thin across the face)
+  gap: 0.2,       // breakaway clearance under the contact (matches PROP/FIN)
+  footHalf: 3.0,  // foot flange half-width past the wedge, each side
+  footH: 0.6,
+  pitch: 24.0,    // mm between wedges across the face (a ROW, not a wall of plastic)
+  tStep: 1.5,     // sampling step up the face
+  minH: 2.0,      // skip a wedge shorter than this
+  inset: 2.0,     // keep wedges off the very edges of the patch
+  maxRow: 14,     // hard cap on wedges per patch, so a wide face never sprays
+  // A wedge is for a BROAD leaning face props can't reach. Below this face area
+  // (or u-extent) it is a small/curved patch better left to props or draw-mode --
+  // wedging it just sprays spikes (the hook's curved arm).
+  minArea: 500,
+  minWidth: 22,
+};
+
+const FIN_DEFAULTS = Object.freeze({ ...FIN });
+const PAD_DEFAULTS = Object.freeze({ ...PAD, custom: Object.freeze({ ...PAD.custom }) });
+const PROP_DEFAULTS = Object.freeze({ ...PROP });
+const PERP_DEFAULTS = Object.freeze({ ...PERP });
+const CUT_DEFAULTS = Object.freeze({ ...CUT });
+
+/**
+ * Apply the page's clearance settings to FIN / PROP / PAD.
+ *
+ * WHY THIS IS A PARAMETER AND NOT JUST A MODULE EDIT. app.js sets these objects
+ * directly (applyMaterial for the PLA/PETG profiles, the Support gap and Pad grip
+ * fields) and that works for anything it builds itself. But the real build runs in
+ * finworker.js, a module Worker with its OWN instance of fins.js and prop.js: module
+ * state does not cross a Worker boundary, so everything the page set stayed on the
+ * page. PETG picked in Auto mode therefore printed PLA's clearances -- silently, since
+ * the numbers on screen were right and only the geometry disagreed.
+ *
+ * So the values travel WITH the build request (opts.tunables, structured-cloned like
+ * every other option) and are applied here, in whichever instance is doing the work.
+ * Unknown or non-finite entries are ignored, and calling this with nothing leaves the
+ * defaults alone -- an old caller that doesn't pass tunables behaves exactly as before.
+ */
+export function applyTunables(t) {
+  if (!t || typeof t !== 'object') return;
+  const hasValidTunable =
+    Number.isFinite(t.finGap) ||
+    Number.isFinite(t.tineBite) ||
+    Number.isFinite(t.padH) ||
+    Number.isFinite(t.padGrab) ||
+    Number.isFinite(t.propGap) ||
+    ['auto', 'light', 'sure', 'custom'].includes(t.padStyle) ||
+    (t.padCustom && typeof t.padCustom === 'object' && Object.values(t.padCustom).some(Number.isFinite)) ||
+    CUTOUT_PATTERNS.includes(t.cutout);
+  if (!hasValidTunable) return;
+
+  Object.assign(FIN, FIN_DEFAULTS);
+  Object.assign(PAD, PAD_DEFAULTS);
+  PAD.custom = { ...PAD_DEFAULTS.custom };
+  Object.assign(PROP, PROP_DEFAULTS);
+  Object.assign(PERP, PERP_DEFAULTS);
+  Object.assign(CUT, CUT_DEFAULTS);
+  const set = (obj, key, v) => { if (Number.isFinite(v)) obj[key] = v; };
+  set(FIN, 'gap', t.finGap);
+  set(FIN, 'tineBite', t.tineBite);
+  set(PROP, 'tineBite', t.tineBite);
+  set(FIN, 'padH', t.padH);
+  set(PAD, 'grab', t.padGrab);
+  if (['auto', 'light', 'sure', 'custom'].includes(t.padStyle)) PAD.style = t.padStyle;
+  if (t.padCustom) for (const k of Object.keys(PAD.custom)) set(PAD.custom, k, t.padCustom[k]);
+  set(PROP, 'gap', t.propGap);
+  // The wedge keeps its own copy of the clearance, so the Support gap field and the
+  // PETG profile never reached it -- not even on the main thread, where everything
+  // else worked. One clearance, applied everywhere it is spelled.
+  set(PERP, 'gap', t.propGap);
+  // Not a clearance, but module state with the same Worker problem.
+  if (CUTOUT_PATTERNS.includes(t.cutout)) CUT.pattern = t.cutout;
+}
+
 /**
  * A breakaway pad under the part's bed contact.
  *
@@ -807,14 +848,15 @@ function seatedPartTris(topo, rot, offset) {
  * The part's first-layer outline: its section at the layer's mid-height (where a
  * slicer cuts), as a flat [x0, y0, x1, y1, ...] segment list, plus its length.
  */
-function firstLayerOutline(partTris, zc) {
+export function firstLayerOutline(partTris, zc) {
   const segs = [];
   let length = 0;
+  const zPlane = zc + 1.000137e-7;
   for (let i = 0; i < partTris.length; i += 9) {
     const pts = [];
     for (let a = 0; a < 3; a++) {
       const p = i + a * 3, q = i + ((a + 1) % 3) * 3;
-      const za = partTris[p + 2] - zc, zb = partTris[q + 2] - zc;
+      const za = partTris[p + 2] - zPlane, zb = partTris[q + 2] - zPlane;
       if ((za < 0) === (zb < 0)) continue;
       const t = za / (za - zb);
       pts.push([partTris[p] + t * (partTris[q] - partTris[p]), partTris[p + 1] + t * (partTris[q + 1] - partTris[p + 1])]);
@@ -1007,14 +1049,16 @@ function brimPad(partTris, contact, e, h, g, grab, layerH, outline, out) {
   // Signed distance to the outline, capped at `reach` (negative = inside it).
   const dist = (x, y) => {
     const arr = bucket.get(key(Math.floor(x / B), Math.floor(y / B)));
+    if (!arr) return Infinity;
     let d2 = reach * reach;
-    if (arr) for (let k = 0; k < arr.length; k += 4) {
+    for (let k = 0; k < arr.length; k += 4) {
       const x0 = arr[k], y0 = arr[k + 1], dx = arr[k + 2] - x0, dy = arr[k + 3] - y0;
       const l2 = dx * dx + dy * dy;
       const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / l2)) : 0;
       const ex = x0 + t * dx - x, ey = y0 + t * dy - y;
       d2 = Math.min(d2, ex * ex + ey * ey);
     }
+    if (d2 >= reach * reach) return Infinity;
     const d = Math.sqrt(d2);
     const low = surfaceZAt(partTris, x, y);
     return low !== null && low < zc ? -d : d;
@@ -1026,7 +1070,8 @@ function brimPad(partTris, contact, e, h, g, grab, layerH, outline, out) {
     let low = surfaceZAt(partTris, x, y) ?? Infinity;
     for (const [dx, dy] of ring) low = Math.min(low, surfaceZAt(partTris, x + dx, y + dy) ?? Infinity);
     // With no gap asked for (Custom gap 0) grip alone decides -- a bite is a bite.
-    const ramp = g > 0 ? zc + k * (dist(x, y) - g) : Infinity;
+    const d = dist(x, y);
+    const ramp = g > 0 && Number.isFinite(d) ? zc + k * (d - g) : Infinity;
     return Math.max(0.05, Math.min(H, low + grab, ramp));
   };
   const at = (s, t) => [cx + ax * s + bx * t, cy + ay * s + by * t];
@@ -1073,7 +1118,7 @@ function brimPad(partTris, contact, e, h, g, grab, layerH, outline, out) {
   }
   for (let i = 0; i < cols.length - 1; i++) {
     const A = cols[i], B = cols[i + 1];
-    for (let j = 0; j < nT - 1; j++) { tri(A[j], B[j], B[j + 1]); tri(A[j], B[j + 1], A[j + 1]); }
+    for (let j = 0; j < nT - 1; j++) { tri(A[j], B[j + 1], B[j]); tri(A[j], A[j + 1], B[j + 1]); }
   }
   // boundary ring (tipL, the +t rim left to right, tipR, the -t rim right to
   // left), then its side wall and the flat bottom fan
@@ -1292,22 +1337,6 @@ function seatingOf(result, contactPts) {
  * coverage pitch, this is the "row of fins" a must-tilt plate needs, and it stays
  * the same perpendicular T-rib Matthew approved on the cube.
  */
-const PERP = {
-  th: 1.2,        // wedge thickness (thin across the face)
-  gap: 0.2,       // breakaway clearance under the contact (matches PROP/FIN)
-  footHalf: 3.0,  // foot flange half-width past the wedge, each side
-  footH: 0.6,
-  pitch: 24.0,    // mm between wedges across the face (a ROW, not a wall of plastic)
-  tStep: 1.5,     // sampling step up the face
-  minH: 2.0,      // skip a wedge shorter than this
-  inset: 2.0,     // keep wedges off the very edges of the patch
-  maxRow: 14,     // hard cap on wedges per patch, so a wide face never sprays
-  // A wedge is for a BROAD leaning face props can't reach. Below this face area
-  // (or u-extent) it is a small/curved patch better left to props or draw-mode --
-  // wedging it just sprays spikes (the hook's curved arm).
-  minArea: 500,
-  minWidth: 22,
-};
 
 /** Push a closed solid, flipping winding to outward if its signed volume is negative. */
 function pushSolid(local, out) {
@@ -1425,8 +1454,9 @@ function columnClear(p, u) {
  * (a tilted bore prints poorly and must not be finned -- rotate hole-up or draw).
  */
 export function perpColumns(p, lo, hi, pitch) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !Number.isFinite(pitch) || pitch <= 0) return [];
   const span = hi - lo;
-  if (span <= 0) return [];
+  if (span <= 0 || !Number.isFinite(span)) return [];
   const nS = Math.max(2, Math.ceil(span / 1.0));
   const clear = [];
   for (let i = 0; i <= nS; i++) clear.push(columnClear(p, lo + (span * i) / nS));
@@ -1447,7 +1477,8 @@ export function perpColumns(p, lo, hi, pitch) {
   const cols = [];
   for (const [a, b] of bands) {
     const w = b - a;
-    const m = Math.max(1, Math.min(PERP.maxRow, Math.round(w / pitch)));
+    const effPitch = Math.max(0.1, Number.isFinite(pitch) ? pitch : 10);
+    const m = Math.max(1, Math.min(PERP.maxRow, Math.round(w / effPitch) || 1));
     for (let k = 0; k < m; k++) cols.push(m === 1 ? (a + b) / 2 : a + (w * k) / (m - 1));
   }
   return cols.slice(0, PERP.maxRow);
@@ -1588,7 +1619,7 @@ export function buildFins(topo, result, rot, opts = {}) {
   // one of those, a brace is no longer a piece that snaps off by itself.
   const walls = (built.fins ?? []).map((f) => f.line).filter((l) => Array.isArray(l) && l.length);
   const sw = buildSwayBraces(topo, result, rot,
-    { ...opts.sway, tines: opts.tines, layerHeight: opts.layerHeight, avoid: { walls } });
+    { gap: FIN.gap, bite: FIN.tineBite, ...opts.sway, tines: opts.tines, layerHeight: opts.layerHeight, avoid: { walls } });
   // Each brace also gets a fin record: the Auto view draws and exports only the
   // triangles some record claims (per-fin removal), so an unrecorded brace would
   // be counted in the readout but never shown or written out.

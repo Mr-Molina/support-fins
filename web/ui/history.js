@@ -12,7 +12,7 @@ import {
   part, drawnWalls, finMode, finsVisible, drawAugment,
   setDrawnWalls, setLayPlacing, setFinMode, setFinsVisible, setDrawAugment,
   clearPreview, syncFinsToggleUI, syncAugmentUI,
-  syncDrawControls, setGizmo, shade, refreshFins,
+  syncDrawControls, setGizmo, shade, refreshFins, rebuildDrawn,
 } from '../app.js';
 import { hideSuggestions } from './suggest.js';
 
@@ -32,6 +32,7 @@ function snapshot() {
     load: loadDir ? loadDir.clone() : null,
     finMode, finsVisible, drawAugment,
     removedSigs: [...removedSigs],
+    coverage: el('coverage-slider') ? parseFloat(el('coverage-slider').value) : 0.5,
   };
 }
 
@@ -57,6 +58,10 @@ function restoreState(s) {
   setFinMode(s.finMode);
   setFinsVisible(s.finsVisible);
   setDrawAugment(s.drawAugment ?? false);
+  if (s.coverage !== undefined && el('coverage-slider')) {
+    el('coverage-slider').value = s.coverage;
+    if (el('coverage-fld')) el('coverage-fld').textContent = s.coverage;
+  }
   clearPreview();         // also drops a wall-in-progress (drawStart)
   // Re-sync every control that mirrors the restored state, then rebuild the
   // scene the same way a normal edit would.
@@ -69,6 +74,7 @@ function restoreState(s) {
   el('rot-delta').textContent = '';
   hideSuggestions();
   shade();
+  rebuildDrawn();
   refreshFins();
   syncHistButtons();
 }

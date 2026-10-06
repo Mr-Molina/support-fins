@@ -147,17 +147,30 @@ class SupportFinsProbe(orca.script.ScriptPluginCapabilityBase):
 
         any_overhang = False
         for oi, obj in enumerate(objs):
+            try:
+                trafo = np.asarray(obj.trafo(), dtype=np.float64)
+            except Exception:
+                trafo = np.eye(4, dtype=np.float64)
             vols = list(obj.volumes())
             lines.append(f"Object {oi}: {len(vols)} volume(s)")
             for vi, vol in enumerate(vols):
                 try:
                     mesh = vol.mesh()
-                    V = np.asarray(mesh.vertices())
-                    T = np.asarray(mesh.triangles())
+                    V = np.asarray(mesh.vertices(), dtype=np.float64)
+                    T = np.asarray(mesh.triangles(), dtype=np.int64)
                 except Exception as e:
                     lines.append(f"  vol {vi}: mesh read FAILED "
                                  f"({type(e).__name__}: {e})")
                     continue
+                try:
+                    vol_m = np.asarray(vol.matrix(), dtype=np.float64)
+                except Exception:
+                    vol_m = np.eye(4, dtype=np.float64)
+                M = trafo @ vol_m
+                if V.size > 0:
+                    V = V @ M[:3, :3].T + M[:3, 3]
+                if T.size > 0 and np.linalg.det(M[:3, :3]) < 0:
+                    T = T[:, [0, 2, 1]]
                 r = _analyse_mesh(V, T)
                 if r is None:
                     lines.append(f"  vol {vi}: empty mesh")

@@ -129,8 +129,9 @@ function clip(poly, f) {
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], b = poly[(i + 1) % poly.length];
     const fa = f(a), fb = f(b);
-    if (fa >= 0) out.push(a);
-    if ((fa >= 0) !== (fb >= 0)) {
+    const aIn = fa >= 0, bIn = fb >= 0;
+    if (aIn) out.push(a);
+    if (aIn !== bIn && fa !== 0 && fb !== 0) {
       const t = fa / (fa - fb);
       out.push(a.map((v, k) => v + (b[k] - v) * t));
     }
@@ -436,11 +437,17 @@ export function swayClashesWall(rib, walls) {
     if (!Array.isArray(line) || line.length < 1) continue;
     if (line.length === 1) {
       const p = line[0];
+      const pZ = p[2] ?? 0;
+      if (pZ > rib.height + SWAY.clearance || pZ < -SWAY.clearance) continue;
       if (segDist(rib.foot[0], rib.foot[1], p, p) < need) return true;
       continue;
     }
     for (let i = 1; i < line.length; i++) {
-      if (segDist(rib.foot[0], rib.foot[1], line[i - 1], line[i]) < need) return true;
+      const p0 = line[i - 1], p1 = line[i];
+      const minZ = Math.min(p0[2] ?? 0, p1[2] ?? 0);
+      const maxZ = Math.max(p0[2] ?? 0, p1[2] ?? 0);
+      if (minZ > rib.height + SWAY.clearance || maxZ < -SWAY.clearance) continue;
+      if (segDist(rib.foot[0], rib.foot[1], p0, p1) < need) return true;
     }
   }
   return false;

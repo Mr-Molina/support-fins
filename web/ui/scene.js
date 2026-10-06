@@ -14,16 +14,20 @@ THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 // ---------------------------------------------------------------- scene setup
 
 export const viewport = el('viewport');
-export const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-// Label the canvas: a screen reader otherwise announces a bare "canvas". The 3D
-// itself isn't reachable non-visually, but the live stats panel carries the same
-// state as text, so this points there.
-renderer.domElement.setAttribute('role', 'img');
-renderer.domElement.setAttribute(
-  'aria-label', 'Interactive 3D preview of the loaded part. Orientation and support '
-  + 'stats are reported as text in the panel on the left.');
-viewport.appendChild(renderer.domElement);
+export const renderer = typeof document !== 'undefined' && viewport && viewport.tagName === 'DIV'
+  ? new THREE.WebGLRenderer({ antialias: true })
+  : null;
+if (renderer && viewport) {
+  renderer.setPixelRatio(Math.min(typeof devicePixelRatio !== 'undefined' ? devicePixelRatio : 1, 2));
+  // Label the canvas: a screen reader otherwise announces a bare "canvas". The 3D
+  // itself isn't reachable non-visually, but the live stats panel carries the same
+  // state as text, so this points there.
+  renderer.domElement.setAttribute('role', 'img');
+  renderer.domElement.setAttribute(
+    'aria-label', 'Interactive 3D preview of the loaded part. Orientation and support '
+    + 'stats are reported as text in the panel on the left.');
+  viewport.appendChild(renderer.domElement);
+}
 
 export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14161a);
@@ -31,9 +35,11 @@ scene.background = new THREE.Color(0x14161a);
 export const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000);
 camera.up.set(0, 0, 1);
 
-export const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+export const controls = renderer ? new OrbitControls(camera, renderer.domElement) : null;
+if (controls) {
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+}
 
 // Lighting is a legibility requirement here, not decoration: overhangs are on the
 // UNDERSIDE, so the user spends most of their time looking up at the part. A
@@ -58,6 +64,14 @@ scene.add(plate);
 
 /** Grid + volume wireframe for a bed `sx` x `sy` mm and `sz` mm of headroom. */
 export function buildPlate(sx, sy, sz) {
+  sx = Math.max(10, Math.min(5000, sx || 10));
+  sy = Math.max(10, Math.min(5000, sy || 10));
+  sz = Math.max(10, Math.min(5000, sz || 10));
+  for (const child of plate.children) {
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) child.material.forEach((m) => m?.dispose?.());
+    else child.material?.dispose?.();
+  }
   plate.clear();
   const hx = sx / 2, hy = sy / 2;
   const step = 10;
@@ -108,12 +122,15 @@ export function frame(size) {
 
 /** Upload a triangle list into the scene, or null if there is nothing to show. */
 export function meshFrom(tris, material) {
-  if (!tris.length) return null;
-  const arr = new Float32Array(tris.length * 3);
-  for (let i = 0; i < tris.length; i++) {
-    arr[i * 3] = tris[i][0];
-    arr[i * 3 + 1] = tris[i][1];
-    arr[i * 3 + 2] = tris[i][2];
+  if (!tris || !tris.length) return null;
+  const isFlat = tris instanceof Float32Array;
+  const arr = isFlat ? tris : new Float32Array(tris.length * 3);
+  if (!isFlat) {
+    for (let i = 0; i < tris.length; i++) {
+      arr[i * 3] = tris[i][0];
+      arr[i * 3 + 1] = tris[i][1];
+      arr[i * 3 + 2] = tris[i][2];
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
@@ -128,9 +145,11 @@ export const raycaster = new THREE.Raycaster();
 export const pointer = new THREE.Vector2();
 
 export function resize() {
-  const w = viewport.clientWidth, h = viewport.clientHeight;
-  renderer.setSize(w, h);          // must update CSS size too, or a 2x DPR
+  if (!viewport || !renderer) return;
+  const w = viewport.clientWidth, height = viewport.clientHeight;
+  const h = Math.max(1, height);
+  renderer.setSize(w, height);          // must update CSS size too, or a 2x DPR
   camera.aspect = w / h;           // canvas lays out at 2x and we see a quadrant
   camera.updateProjectionMatrix();
 }
-addEventListener('resize', resize);
+if (typeof addEventListener !== 'undefined') addEventListener('resize', resize);

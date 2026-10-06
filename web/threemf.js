@@ -197,11 +197,19 @@ function scanXML(xml, onOpen, onClose) {
     let selfClosing = false;
     while (p < n) {
       while (p < n && /\s/.test(xml[p])) p++;
-      if (xml[p] === '/' && xml[p + 1] === '>') { selfClosing = true; p += 2; break; }
+      if (p >= n) break;
+      if (xml[p] === '/') {
+        let q = p + 1;
+        while (q < n && /\s/.test(xml[q])) q++;
+        if (xml[q] === '>') { selfClosing = true; p = q + 1; break; }
+        p++;
+        continue;
+      }
       if (xml[p] === '>') { p++; break; }
       const nameStart = p;
       while (p < n && !/[\s=/>]/.test(xml[p])) p++;
       const attr = xml.slice(nameStart, p);
+      if (!attr) { p++; continue; }
       while (p < n && /\s/.test(xml[p])) p++;
       if (xml[p] !== '=') { if (attr) attrs[attr] = ''; continue; }
       p++;

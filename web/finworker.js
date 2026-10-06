@@ -14,11 +14,34 @@
 // would only add a place for the two to drift.
 import { buildFins } from './fins.js';
 
+self.onerror = (e) => {
+  self.postMessage({ error: e?.message || String(e) });
+};
+self.onunhandledrejection = (e) => {
+  self.postMessage({ error: e?.reason?.message || String(e?.reason || e) });
+};
+
 self.onmessage = (e) => {
   const { id, topology, result, rot, opts } = e.data;
   try {
     const built = buildFins(topology, result, rot, opts);
-    self.postMessage({ id, built });
+    const transfer = [];
+    if (built?.triangles) {
+      if (built.triangles instanceof Float32Array) {
+        built.flatTris = built.triangles;
+      } else {
+        const tris = built.triangles;
+        const flat = new Float32Array(tris.length * 3);
+        for (let i = 0; i < tris.length; i++) {
+          flat[i * 3] = tris[i][0];
+          flat[i * 3 + 1] = tris[i][1];
+          flat[i * 3 + 2] = tris[i][2];
+        }
+        built.flatTris = flat;
+      }
+      transfer.push(built.flatTris.buffer);
+    }
+    self.postMessage({ id, built }, transfer);
   } catch (err) {
     // Report rather than die silently -- the main thread falls back to an inline
     // build so a worker-only failure never leaves the user with no support.

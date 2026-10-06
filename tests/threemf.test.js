@@ -13,7 +13,7 @@
 import { WEB, MODELS, assert, assertClose, block, readSTL, buildTopology, analyze, rotX } from './_util.js';
 
 const { writeThreeMF, readThreeMF } = await import(`${WEB}threemf.js`);
-const { zipStore } = await import(`${WEB}zip.js`);
+const { zipStore, unzip, inflateRaw, MAX_UNCOMPRESSED_ENTRY } = await import(`${WEB}zip.js`);
 
 const REL = 'http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel';
 
@@ -529,4 +529,29 @@ Deno.test('INTEGRATION: a production-extension 3MF (mesh via p:path) analyzes id
   for (const k of ['x', 'y', 'z']) assertClose(b.size[k], a.size[k], 1e-3, `size ${k} via p:path`);
   assertClose(b.overArea, a.overArea, a.overArea * 1e-3 + 1e-4, 'overhang area via p:path');
   assert(b.regions.length === a.regions.length, `regions ${b.regions.length} vs STL's ${a.regions.length}`);
+});
+
+Deno.test('CAD-LOGIC-04: scanXML handles trailing slash whitespace and malformed tags without looping', async () => {
+  const root = `<?xml version="1.0"?><model unit="millimeter" xmlns="${CORE_NS}"><resources>`
+    + '<object id="1" type="model" / >'
+    + '<object id="2" type="model"  / >'
+    + '<object id="3" =="foo" / >'
+    + '<object id="4" /'
+    + '</resources><build><item objectid="1" / ></build></model>';
+  try {
+    await readThreeMF(await packParts([{ name: '3D/3dmodel.model', data: root }]));
+  } catch (e) {
+    assert(e.message.length > 0);
+  }
+});
+
+Deno.test('CAD-LOGIC-02: zip bomb protection rejects oversized expectedSize or decompression streams', async () => {
+  let threwExpected = false;
+  try {
+    await inflateRaw(new Uint8Array(10), MAX_UNCOMPRESSED_ENTRY + 1);
+  } catch (e) {
+    threwExpected = true;
+    assert(e.message === 'ZIP entry exceeds maximum allowable size');
+  }
+  assert(threwExpected, 'should throw for expectedSize > MAX_UNCOMPRESSED_ENTRY');
 });

@@ -33,8 +33,9 @@ export const STEP_PARAMS = {
  * "ISO-10303-21;" magic (after an optional BOM / leading whitespace).
  */
 export function isStep(buffer) {
-  const head = new TextDecoder().decode(new Uint8Array(buffer, 0, Math.min(64, buffer.byteLength)));
-  return /^﻿?\s*ISO-10303-21\s*;/.test(head);
+  const head = new TextDecoder().decode(new Uint8Array(buffer, 0, Math.min(4096, buffer.byteLength)));
+  const clean = head.replace(/^\uFEFF/, '').replace(/^\s+/, '').replace(/^\/\*[\s\S]*?\*\/\s*/, '');
+  return /^ISO-10303-21\s*;/.test(clean);
 }
 
 const bbox = (positions) => {
@@ -109,6 +110,8 @@ export function stepObjects(result) {
 }
 
 let worker = null;
+let stepJobId = 0;
+let inFlight = false;
 
 const stepWorker = () => (worker ??= new Worker(new URL('./stepworker.js', import.meta.url)));
 
@@ -121,6 +124,14 @@ export function warmStep() {
   if (!worker) stepWorker().postMessage({ warm: true });
 }
 
+export function releaseStepWorker() {
+  if (worker) {
+    worker.terminate();
+    worker = null;
+    inFlight = false;
+  }
+}
+
 /**
  * Read a STEP file in the browser. The kernel worker is kept after first use,
  * so the WASM compiles once per page load; a failure drops it so the next
@@ -129,12 +140,28 @@ export function warmStep() {
  * @param bytes  Uint8Array of the whole .step file
  */
 export async function readStep(bytes) {
+  if (worker && inFlight) {
+    worker.terminate();
+    worker = null;
+  }
+  inFlight = true;
+  const currentId = ++stepJobId;
   const w = stepWorker();
   const result = await new Promise((resolve, reject) => {
-    const fail = (msg) => { w.terminate(); if (worker === w) worker = null; reject(new Error(msg)); };
-    w.onmessage = (e) => (e.data.error ? fail(e.data.error) : resolve(e.data));
+    const fail = (msg) => {
+      inFlight = false;
+      w.terminate();
+      if (worker === w) worker = null;
+      reject(new Error(msg));
+    };
+    w.onmessage = (e) => {
+      if (e.data.id !== undefined && e.data.id !== currentId) return;
+      inFlight = false;
+      if (e.data.error) fail(e.data.error);
+      else resolve(e.data);
+    };
     w.onerror = (e) => fail(e.message || 'the STEP reader failed to load');
-    w.postMessage({ bytes, params: STEP_PARAMS });
+    w.postMessage({ id: currentId, bytes, params: STEP_PARAMS }, [bytes.buffer]);
   });
   return stepObjects(result);
 }

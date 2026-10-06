@@ -71,7 +71,7 @@ function assignSigs(records) {
 
 /** Flatten the KEPT fin records' triangle segments into one vertex array, tagging
  *  each triangle with its owning record so a pick can map faceIndex → fin. */
-function filteredTriangles(allTris, records, removed) {
+export function filteredTriangles(allTris, records, removed) {
   const tris = [];
   const map = [];   // triangle index → record index
   for (let i = 0; i < records.length; i++) {

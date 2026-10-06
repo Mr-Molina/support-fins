@@ -5,14 +5,51 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   deno-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: denoland/setup-deno@9db6f8d321528659556d01d4183861c8a14ecb39 # v2.1.5
         with:
           deno-version: v2.x
       - name: Run test suite
-        run: deno test -A
+        run: deno test --allow-read tests/
+
+  pytest-orca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest numpy trimesh shapely rtree scipy networkx mini-racer
+      - name: Build Orca plugin bundle
+        run: python plugins/orca/build.py
+      - name: Run Pytest suite
+        run: python -m pytest -v plugins/orca/tests/
+
+  lua-prusa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.11'
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3
+          sudo ln -sf /usr/bin/lua5.3 /usr/bin/lua
+          sudo ln -sf /usr/bin/luac5.3 /usr/bin/luac
+      - name: Run Prusa plugin tests
+        run: bash plugins/prusa/run-tests.sh
