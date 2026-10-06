@@ -1,10 +1,11 @@
 /**
  * Export: the oriented part plus the fins/pad, as STL or 3MF.
  */
-import { writeBinarySTL, download } from '../stl.js';
+import { writeBinarySTL } from '../stl.js';
 import { writeThreeMF } from '../threemf.js';
 import { el } from './dom.js';
 import { part, topology, lastResult, rotM3, partName, activeAdded } from '../app.js';
+import { saveFile } from './platform.js';
 
 /**
  * Export the part AS ORIENTED, seated on the plate, with the fins as extra
@@ -49,17 +50,21 @@ export function buildExportGeometry() {
  * the same way for whoever opens it, so the orientation has to be baked in --
  * exporting the original frame and hoping the user re-rotates defeats the point.
  */
-el('export').addEventListener('click', () => {
+el('export').addEventListener('click', async () => {
   const g = buildExportGeometry();
   if (!g) return;
-  download(writeBinarySTL([...g.partTris, ...g.finTris], g.base), `${g.base}-fins.stl`);
+  const blob = writeBinarySTL([...g.partTris, ...g.finTris], g.base);
+  const buf = await blob.arrayBuffer();
+  await saveFile(`${g.base}-fins.stl`, buf, 'application/sla');
 });
 
 // 3MF keeps the fins as a separate object and states millimeters, so the file
 // opens correctly oriented and support-free in Bambu Studio, OrcaSlicer, or
 // PrusaSlicer without a re-scale or a re-rotate.
-el('export-3mf').addEventListener('click', () => {
+el('export-3mf').addEventListener('click', async () => {
   const g = buildExportGeometry();
   if (!g) return;
-  download(writeThreeMF(g.partTris, g.finTris, g.base), `${g.base}-fins.3mf`);
+  const blob = writeThreeMF(g.partTris, g.finTris, g.base);
+  const buf = await blob.arrayBuffer();
+  await saveFile(`${g.base}-fins.3mf`, buf, 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml');
 });

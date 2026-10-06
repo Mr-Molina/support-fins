@@ -9,6 +9,7 @@ import { readThreeMF } from '../threemf.js';
 import { isStep, readStep, warmStep } from '../step.js';
 import { el } from './dom.js';
 import { part, setPart } from '../app.js';
+import { onFileOpen } from './platform.js';
 
 export let importNote = '';   // what the 3MF/STEP reader had to decide (merge, unit, skips)
 
@@ -44,6 +45,8 @@ function mergeObjectPositions(objs) {
   return all;
 }
 
+let activePickerClose = null;
+
 /**
  * A 3MF plate can hold several distinct objects (a Bambu/MakerWorld download
  * usually does) and this tool fins ONE part. Show the list and resolve to the
@@ -52,6 +55,10 @@ function mergeObjectPositions(objs) {
  * Enter loads.
  */
 function pickObjects(objects) {
+  if (activePickerClose) {
+    activePickerClose(null);
+  }
+
   const modal = el('picker');
   const list = el('picker-list');
   const hint = el('picker-hint');
@@ -95,12 +102,14 @@ function pickObjects(objects) {
 
   return new Promise((resolve) => {
     function close(result) {
+      if (activePickerClose === close) activePickerClose = null;
       modal.hidden = true;
       loadBtn.removeEventListener('click', onLoad);
       cancelBtn.removeEventListener('click', onCancel);
       removeEventListener('keydown', onKey);
       resolve(result);
     }
+    activePickerClose = close;
     function onLoad() { const sel = selected(); if (sel.length) close(sel); }
     function onCancel() { close(null); }
     function onKey(e) {
@@ -122,7 +131,12 @@ function pickObjects(objects) {
 async function parseModel(buffer) {
   importNote = '';
   if (isStep(buffer)) return parseStep(buffer);
-  if (!isZip(buffer)) return loader.parse(buffer);
+  if (!isZip(buffer)) {
+    const geom = loader.parse(buffer);
+    const pos = geom.getAttribute('position');
+    if (!pos || pos.count < 3) throw new Error('File contains no 3D mesh geometry.');
+    return geom;
+  }
 
   const { objects, unit, skipped } = await readThreeMF(new Uint8Array(buffer));
 
@@ -207,7 +221,14 @@ export async function loadURL(url) {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   const geometry = await parseModel(await res.arrayBuffer());
   if (!geometry) return;                       // picker cancelled
-  setPart(geometry, url.split('/').pop());
+  let cleanName = 'part.stl';
+  try {
+    const parsed = new URL(url, location.href);
+    cleanName = parsed.pathname.split('/').filter(Boolean).pop() || 'part.stl';
+  } catch {
+    cleanName = (url.split('?')[0].split('#')[0].split('/').pop()) || 'part.stl';
+  }
+  setPart(geometry, cleanName);
   // Drop ?stl= once it has been consumed: the path is nobody's business but the
   // user's, and a stale one in the address bar is misleading after they open a
   // different file.
@@ -235,4 +256,16 @@ addEventListener('drop', (e) => {
   drop.classList.remove('armed');
   if (part) drop.classList.add('hidden');
   loadFile(e.dataTransfer.files[0]);
+});
+
+// Register file association listener for desktop app (double click in Explorer/Finder)
+onFileOpen(async ({ name, data }) => {
+  try {
+    const geometry = await parseModel(data);
+    if (!geometry) return;
+    setPart(geometry, name);
+  } catch (err) {
+    console.error('Failed to open associated file:', err);
+    alert(`Could not open ${name}:\n${err.message}`);
+  }
 });
