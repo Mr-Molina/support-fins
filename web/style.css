@@ -629,7 +629,6 @@ html, body {
 .load-verdict.good  { border-left-color: #6fcf8b; color: #cdeccf; }
 .load-verdict.mixed { border-left-color: #ffb454; color: #f0dcc0; }
 .load-verdict.poor  { border-left-color: #ff6b6b; color: #f2cfcf; }
-#orient .loadfx #load-suggest { flex-basis: 100%; margin-top: 2px; }
 
 /* ---------- bottom-right status card ---------- */
 #status {

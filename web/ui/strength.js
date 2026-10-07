@@ -3,13 +3,12 @@
  * and the "turn to the strongest printable pose" button, plus the layer-line view.
  */
 import * as THREE from 'three';
-import { loadAlignment, suggestStrengthPose, PAD_DIRS } from '../orient.js';
+import { loadAlignment, PAD_DIRS } from '../orient.js';
 export { PAD_DIRS };
 import { el } from './dom.js';
 import { scene } from './scene.js';
 import { histPush } from './history.js';
-import { applySuggestion } from './suggest.js';
-import { part, topology, threshold, setGizmo } from '../app.js';
+import { part, topology, setGizmo } from '../app.js';
 
 // ------------------------------------------------------------------- load arrow
 //
@@ -162,10 +161,8 @@ export function setLoadMode(m) {
  */
 export function updateLoadReadout() {
   const note = el('load-note');
-  const suggestBtn = el('load-suggest');
   if (!loadDir || !part) {
     note.hidden = true;
-    suggestBtn.hidden = true;
     return;
   }
   const w = loadDir.clone().applyQuaternion(part.quaternion);
@@ -175,13 +172,10 @@ export function updateLoadReadout() {
     topo: topology,
     rot: rotM.elements,
   });
-  if (!al) { note.hidden = true; suggestBtn.hidden = true; return; }
+  if (!al) { note.hidden = true; return; }
   note.textContent = al.text;
   note.className = `load-verdict ${al.quality}`;
   note.hidden = false;
-  // Offer a stronger pose only when this one isn't already good. Wired in the
-  // suggest section below; here we just decide whether to show the button.
-  suggestBtn.hidden = al.quality === 'good';
 }
 
 // The Strength-arrow pad: pick a world direction and the load points that way.
@@ -242,40 +236,3 @@ el('load-clear').addEventListener('click', clearLoad);
 
 el('load-mode-pull')?.addEventListener('click', () => setLoadMode('pull'));
 el('load-mode-lever')?.addEventListener('click', () => setLoadMode('lever'));
-
-// Turn the part to the strongest PRINTABLE pose for the placed load. Unlike
-// "Suggest orientation" (which minimises support), this is strength-driven: it
-// lays the load most in-plane, but only among poses that actually sit on the bed,
-// so it can't produce the needle-tower. If the current pose is already about as
-// good as it gets, say so instead of turning to an equivalent orientation.
-el('load-suggest').addEventListener('click', () => {
-  if (!part || !topology || !loadDir) return;
-  const pose = suggestStrengthPose(topology, [loadDir.x, loadDir.y, loadDir.z], {
-    threshold,
-    mode: loadMode,
-  });
-  const w = loadDir.clone().applyQuaternion(part.quaternion);
-  const rotM = new THREE.Matrix3().setFromMatrix4(part.matrixWorld);
-  const cur = loadAlignment([w.x, w.y, w.z], {
-    mode: loadMode,
-    topo: topology,
-    rot: rotM.elements,
-  });
-  const note = el('load-note');
-  if (!pose || (cur && pose.cross >= cur.cross - 0.05)) {
-    note.textContent = 'This is about the strongest printable orientation for this '
-      + 'load — a better-aligned pose wouldn’t sit on the bed.';
-    note.className = `load-verdict ${cur ? cur.quality : 'mixed'}`;
-    note.hidden = false;
-    el('load-suggest').hidden = true;
-    return;
-  }
-  if (pose.bedArea < 15.0) {
-    const padSel = el('bed-pad');
-    if (padSel && padSel.value === 'off') {
-      padSel.value = 'auto';
-      padSel.dispatchEvent(new Event('change'));
-    }
-  }
-  applySuggestion(pose.rot);   // turns the part; shade() refreshes the verdict + button
-});
