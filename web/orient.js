@@ -95,7 +95,9 @@ function rotAxis(axis, deg) {
  * six axis directions so a boxy part is always covered. Yaw about vertical is
  * omitted -- overhang, height and bed area are all invariant under it.
  */
-function candidateDowns(topo, maxClusters = 12) {
+export function candidateDowns(topo, opts = 12) {
+  const maxClusters = typeof opts === 'number' ? opts : (opts?.maxClusters ?? 12);
+  const includeDiagonals = typeof opts === 'object' ? !!opts.includeDiagonals : false;
   const { nrm, area, nFaces } = topo;
   const bins = new Map();
   const q = (v) => Math.round(v * 12) / 12;   // ~5deg buckets
@@ -114,6 +116,24 @@ function candidateDowns(topo, maxClusters = 12) {
 
   const downs = [...clusters,
     [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+
+  // When searching for strength poses, synthesize 45° diagonal and edge-tilt candidates
+  // along the part's principal axes so that even unchamfered blocks can be tipped on edge.
+  if (includeDiagonals && topo?.principalAxes) {
+    const { long, mid, short } = topo.principalAxes;
+    const pairs = [[long, mid], [long, short], [mid, short]];
+    for (const [u, v] of pairs) {
+      for (const su of [1, -1]) {
+        for (const sv of [1, -1]) {
+          const dx = su * u[0] + sv * v[0];
+          const dy = su * u[1] + sv * v[1];
+          const dz = su * u[2] + sv * v[2];
+          const len = Math.hypot(dx, dy, dz);
+          if (len > 1e-9) downs.push([dx / len, dy / len, dz / len]);
+        }
+      }
+    }
+  }
 
   // dedup near-duplicate directions
   const out = [];
@@ -331,11 +351,14 @@ export function loadAlignment(dirWorld, { mode = 'pull', topo = null, rot = null
       text = isThin
         ? 'Lever bends the upright across its thinnest cross-section, pulling horizontal layers apart — high risk of snap.'
         : 'The lever bends across the layers — high risk of layer delamination under bending.';
-    } else if (cross > 0.5) {
+    } else if (cross > 0.75) {
       quality = 'mixed';
       text = isThin
         ? 'The lever partly bends across layers, acting on the thinnest section.'
         : 'The lever partly bends across the layers.';
+    } else if (cross > 0.5) {
+      quality = 'good';
+      text = 'Diagonal layer orientation distributes bending tension across continuous extruded strands. Good.';
     }
     return { cross, quality, text, mode: 'lever', isThin };
   }
@@ -354,7 +377,7 @@ export function loadAlignment(dirWorld, { mode = 'pull', topo = null, rot = null
  *
  * In Pull mode, minimizes the load arrow's projection on the build axis.
  * In Lever mode, minimizes the beam axis's projection on the build axis, laying
- * the lever flat on the bed so continuous strands carry the bending moment.
+ * the lever flat or tilting it diagonally so continuous strands carry the bending moment.
  */
 export function suggestStrengthPose(topo, dirLocal, { threshold = 45, mode = 'pull' } = {}) {
   const dl = (() => {
@@ -367,26 +390,26 @@ export function suggestStrengthPose(topo, dirLocal, { threshold = 45, mode = 'pu
   const isLever = mode === 'lever' && !!pAxes;
   const targetLocal = isLever ? pAxes.long : dl;
 
-  const cands = candidateDowns(topo).map((d) => {
+  const cands = candidateDowns(topo, { includeDiagonals: true }).map((d) => {
     const rot = rotFromTo(d, DOWN);
     const a = analyze(topo, threshold, rot);
     const cross = Math.abs(applyRot(rot, targetLocal)[2]);   // rot orthonormal, targetLocal unit -> result unit
-    // Same printability proxy suggestOrientations' pass 1 uses (overhang dominates,
-    // bed contact helps, height is a mild penalty) -- lower is better.
+    // Printability proxy: overhang dominates, bed contact helps, height is a mild penalty.
+    // Tilted and edge-seated parts receive a conforming bed pad, so bed contact is rewarded without
+    // disqualifying parts with small direct face contact.
     const printCost = a.overArea + Math.max(0, 200 - a.bedArea) * 0.25 + a.size.z * 2;
     return { rot, cross, printCost, height: a.size.z, over: a.overArea, bedArea: a.bedArea };
   });
 
-  // A pose with ~no bed contact is a tip/needle/knife-edge -- unprintable regardless of how
-  // nicely the layers line up. Require a minimum stable bed footprint.
-  const minBed = Math.max(4.0, Math.min(MIN_STABLE_BED_AREA, (topo?.totalArea ?? 1000) * 0.02));
-  const seated = cands.filter((c) => c.bedArea >= minBed);
+  // A pose is eligible if it can rest on the build plate (finite height).
+  // The fin generator and conforming bed pad will stabilize edge- and point-seated parts.
+  const seated = cands.filter((c) => c.height > 0);
   if (!seated.length) return null;
 
   // Bound the strength search by printability: only poses within a budget of the
-  // most printable one are eligible, so we never trade a sane print for a tower.
+  // most printable one are eligible, so we never trade a sane print for an absurd needle tower.
   const bestPrint = Math.min(...seated.map((c) => c.printCost));
-  const affordable = seated.filter((c) => c.printCost <= bestPrint + 60);
+  const affordable = seated.filter((c) => c.printCost <= bestPrint + 120);
   // Tie-break candidates with equal cross-fraction by printability cost and larger bed contact area
   affordable.sort((p, r) => (p.cross - r.cross) || (p.printCost - r.printCost) || (r.bedArea - p.bedArea));
 
@@ -395,6 +418,8 @@ export function suggestStrengthPose(topo, dirLocal, { threshold = 45, mode = 'pu
   if (isLever) {
     if (best.cross <= 0.5) {
       verdict = { quality: 'good', text: 'The lever bends along continuous layer strands — the strong direction. Good.' };
+    } else if (best.cross <= 0.75) {
+      verdict = { quality: 'good', text: 'Diagonal layer orientation distributes bending tension across continuous extruded strands. Good.' };
     } else if (best.cross <= 0.866) {
       verdict = { quality: 'mixed', text: 'The lever partly bends across the layers.' };
     } else {

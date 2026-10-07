@@ -196,8 +196,8 @@ function updateDrawReadout(built, ms) {
   if (selectedWall) lead.push(selectedNote());
   if (built?.seating?.kind === 'point') {
     lead.push(built.pad
-      ? 'this part balances on one point, so the bed pad is holding it. Print with the pad on'
-      : 'this part balances on one point. Turn the bed pad on to seat it, or rotate until it sits down');
+      ? 'Tilted on edge/point for strength — the conforming bed pad and breakaway fins lock it to the build plate. Slice with supports OFF.'
+      : 'This part balances on a point/edge. Turn Bed Pad on to seat it, or rotate until it sits down');
   }
   if (built && padNote(built)) lead.push(padNote(built));
   setFinNote(lead, help);
@@ -336,8 +336,8 @@ function updateFinReadout(built, ms) {
   // not cosmetic. Must-see -> stays visible.
   if (n && built.seating?.kind === 'point') {
     lead.push(built.pad
-      ? 'this part balances on one point, so the bed pad is holding it. Print with the pad on'
-      : 'this part balances on one point with nothing under it. Turn the bed pad on, or rotate until it sits down');
+      ? 'Tilted on edge/point for strength — the conforming bed pad and breakaway fins lock it to the build plate. Slice with supports OFF.'
+      : 'This part balances on a point/edge with nothing under it. Turn Bed Pad on to seat it, or rotate until it sits down');
   }
   if (padNote(built)) lead.push(padNote(built));
   if (built.sagRisk) {

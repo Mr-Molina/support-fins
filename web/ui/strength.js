@@ -270,5 +270,12 @@ el('load-suggest').addEventListener('click', () => {
     el('load-suggest').hidden = true;
     return;
   }
+  if (pose.bedArea < 15.0) {
+    const padSel = el('bed-pad');
+    if (padSel && padSel.value === 'off') {
+      padSel.value = 'auto';
+      padSel.dispatchEvent(new Event('change'));
+    }
+  }
   applySuggestion(pose.rot);   // turns the part; shade() refreshes the verdict + button
 });

@@ -5,7 +5,7 @@
 
 import { WEB, assert, assertClose, blockTopo, tiltedBlockTopo, rotX } from './_util.js';
 
-const { suggestOrientations, suggestStrengthPose, layerVerdict, loadAlignment, PAD_DIRS } =
+const { suggestOrientations, suggestStrengthPose, layerVerdict, loadAlignment, PAD_DIRS, candidateDowns } =
   await import(`${WEB}orient.js`);
 const { analyze, MIN_STABLE_BED_AREA } = await import(`${WEB}overhangs.js`);
 
@@ -203,15 +203,40 @@ Deno.test('suggestStrengthPose (lever mode): rotates an upright post with latera
   assert(pose.height <= 20.1, `suggested pose should lay the 100mm post down, got height ${pose.height}`);
 });
 
-Deno.test('suggestStrengthPose: rejects knife-edge / needle poses and enforces stable bed contact', () => {
-  // A tilted block that has a small chamfer/corner contact when oriented at 45deg
+Deno.test('candidateDowns: generates pairwise 45-degree diagonal candidates when includeDiagonals is true', () => {
+  const topo = blockTopo(0, 10, 0, 20, 0, 100);
+  const baseDowns = candidateDowns(topo, { includeDiagonals: false });
+  const diagDowns = candidateDowns(topo, { includeDiagonals: true });
+  assert(diagDowns.length > baseDowns.length, 'expected diagonal candidates to expand the search space');
+  // At least one diagonal candidate should have a projection close to 1/sqrt(2) ~ 0.7071 on two axes
+  const has45 = diagDowns.some((d) => {
+    const nonZero = d.filter((c) => Math.abs(c) > 0.1);
+    return nonZero.length === 2 && Math.abs(Math.abs(nonZero[0]) - Math.SQRT1_2) < 0.05;
+  });
+  assert(has45, 'expected at least one 45-degree diagonal candidate down vector');
+});
+
+Deno.test('suggestStrengthPose: allows edge-seated poses supported by bed pad and fins', () => {
   const topo = tiltedBlockTopo(0, 60, 0, 40, 0, 12, 60);
-  assert(topo.totalArea > 0, 'totalArea must be populated on topology');
   const pose = suggestStrengthPose(topo, [0, 0, 1], { threshold: 45 });
-  if (pose) {
-    assert(pose.bedArea >= Math.max(4.0, Math.min(MIN_STABLE_BED_AREA, topo.totalArea * 0.02)),
-      `suggested pose must have stable bed contact area, got ${pose.bedArea}`);
-  }
+  assert(pose, 'expected suggested pose for tilted block');
+  assert(pose.height > 0, 'pose must have valid height');
+  assert(typeof pose.bedArea === 'number', 'pose must report bed area');
+});
+
+Deno.test('loadAlignment (lever mode): 45-degree diagonal tilt yields good verdict with diagonal copy', () => {
+  // A beam oriented at 45 degrees in X-Z
+  const topo = blockTopo(0, 10, 0, 30, 0, 100);
+  // Beam axis rotated 45 degrees relative to Z
+  const rot45 = [
+    Math.SQRT1_2, 0, -Math.SQRT1_2,
+    0, 1, 0,
+    Math.SQRT1_2, 0, Math.SQRT1_2,
+  ];
+  const al = loadAlignment([1, 0, 0], { mode: 'lever', topo, rot: rot45 });
+  assert(al !== null, 'loadAlignment returned null');
+  assert(al.quality === 'good', `expected good quality for 45-degree tilt, got ${al.quality}`);
+  assert(al.text.includes('Diagonal layer orientation'), `expected diagonal copy, got: ${al.text}`);
 });
 
 Deno.test('suggestStrengthPose: tie-breaks equal-cross candidate poses by printability and bed area', () => {
