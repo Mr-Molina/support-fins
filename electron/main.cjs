@@ -90,7 +90,7 @@ function setupProtocolHandler() {
       return new Response(data, {
         headers: {
           'Content-Type': contentType,
-          'Content-Security-Policy': "default-src 'self' app:; script-src 'self' 'wasm-unsafe-eval' app:; style-src 'self' 'unsafe-inline' app:; img-src 'self' data: blob: app:; worker-src 'self' blob: app:; object-src 'none';"
+          'Content-Security-Policy': "default-src 'self' app:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' app:; style-src 'self' 'unsafe-inline' app:; img-src 'self' data: blob: app:; worker-src 'self' blob: app:; object-src 'none';"
         }
       });
     } catch {
@@ -100,12 +100,17 @@ function setupProtocolHandler() {
 }
 
 function createWindow() {
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, '..', 'assets', 'icons', 'icon.ico')
+    : path.join(__dirname, '..', 'assets', 'icons', 'icon.png');
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 700,
     title: 'support-fins',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     backgroundColor: '#0f1115',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

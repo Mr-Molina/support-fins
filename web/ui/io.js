@@ -128,8 +128,16 @@ function pickObjects(objects) {
  * position array STLLoader produces, so everything downstream (setPart, the
  * weld, the whole engine) is unchanged.
  */
-async function parseModel(buffer) {
+async function parseModel(input) {
   importNote = '';
+  const buffer = input instanceof ArrayBuffer
+    ? input
+    : (ArrayBuffer.isView(input)
+        ? (input.byteOffset === 0 && input.byteLength === input.buffer.byteLength
+            ? input.buffer
+            : input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength))
+        : input);
+
   if (isStep(buffer)) return parseStep(buffer);
   if (!isZip(buffer)) {
     const geom = loader.parse(buffer);

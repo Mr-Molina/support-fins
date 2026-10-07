@@ -8,6 +8,7 @@
   "files": [
     "electron/**/*",
     "web/**/*",
+    "assets/**/*",
     "package.json"
   ],
   "fileAssociations": [
@@ -38,7 +39,8 @@
     "icon": "assets/icons/icon.ico"
   },
   "portable": {
-    "artifactName": "${productName}.exe"
+    "artifactName": "${productName}.exe",
+    "requestExecutionLevel": "user"
   },
   "nsis": {
     "oneClick": false,

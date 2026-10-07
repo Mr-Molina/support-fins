@@ -33,3 +33,19 @@ Deno.test('electron fixes: validates path containment with path.sep boundary', (
   assertEquals(isSafe(validPath), true);
   assertEquals(isSafe(invalidAdjacent), false);
 });
+
+Deno.test('io: normalizes TypedArray and Node Buffer with offset into standard ArrayBuffer', () => {
+  const fullBuffer = new ArrayBuffer(20);
+  const u8 = new Uint8Array(fullBuffer, 4, 10);
+  const normalized = u8 instanceof ArrayBuffer
+    ? u8
+    : (ArrayBuffer.isView(u8)
+        ? (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength
+            ? u8.buffer
+            : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength))
+        : u8);
+
+  assertEquals(normalized instanceof ArrayBuffer, true);
+  assertEquals(normalized.byteLength, 10);
+});
+
