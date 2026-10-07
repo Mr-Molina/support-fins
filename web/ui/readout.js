@@ -30,12 +30,17 @@ function explainNoFins(b) {
          + 'stand on. Turn the bed pad on to seat it, or rotate until it sits '
          + 'down on a face or an edge';
   }
-  if (b.mode === 'prop') {
+  if (b.mode === 'prop' || b.mode === 'auto') {
     const s = b.skipped ?? {};
-    if (!b.rejected.sites) return 'no overhangs to prop in this orientation';
+    if (!b.rejected?.sites) return 'no overhangs to prop in this orientation';
     // Named in the order that tells the user the most. Each is a different
     // stage of the search, and lumping them into "blocked" is what let M5 be
     // recorded as working on a part where it built nothing.
+    if (s.bore) {
+      return 'the overhangs here are inside enclosed holes or bores — placing a wall inside '
+           + 'a hole would fuse to the internal walls and ruin the bore. Small holes bridge cleanly '
+           + 'without supports, or switch to Draw and place one by hand';
+    }
     if (s.wanders) {
       const one = s.wanders === 1;
       return `${s.wanders} overhang${one ? ' is' : 's are'} bowl-shaped rather than `
