@@ -9,6 +9,7 @@
     "start": "electron .",
     "desktop:start": "electron .",
     "desktop:dist": "electron-builder --config electron-builder.json",
+    "desktop:dist:portable": "electron-builder --config electron-builder.json --win portable",
     "desktop:dist:win": "electron-builder --config electron-builder.json --win",
     "desktop:dist:linux": "electron-builder --config electron-builder.json --linux"
   },

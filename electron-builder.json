@@ -34,8 +34,11 @@
     }
   ],
   "win": {
-    "target": ["nsis", "portable"],
+    "target": ["portable", "nsis"],
     "icon": "assets/icons/icon.ico"
+  },
+  "portable": {
+    "artifactName": "${productName}.exe"
   },
   "nsis": {
     "oneClick": false,
