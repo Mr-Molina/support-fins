@@ -40,7 +40,8 @@
   },
   "portable": {
     "artifactName": "${productName}.exe",
-    "requestExecutionLevel": "user"
+    "requestExecutionLevel": "user",
+    "unpackDirName": "support-fins-app"
   },
   "nsis": {
     "oneClick": false,

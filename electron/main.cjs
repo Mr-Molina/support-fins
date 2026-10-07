@@ -1,8 +1,31 @@
-const { app, BrowserWindow, protocol, Menu } = require('electron');
+const { app, BrowserWindow, protocol, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { registerIpcHandlers } = require('./ipc.cjs');
 const { buildApplicationMenu } = require('./menu.cjs');
+
+function appLog(...args) {
+  try {
+    const logDir = app.getPath('userData');
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, 'main.log');
+    const msg = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}\n`;
+    fs.appendFileSync(logFile, msg);
+  } catch (_) {}
+}
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  appLog('UNCAUGHT EXCEPTION:', err.stack || err.message);
+  try {
+    dialog.showErrorBox('Support Fins - Uncaught Error', err.stack || err.message);
+  } catch (_) {}
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  appLog('UNHANDLED REJECTION:', reason);
+});
 
 // Register 'app' as a standard, secure scheme capable of fetch & streaming WebAssembly
 protocol.registerSchemesAsPrivileged([
@@ -22,15 +45,26 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow = null;
 let fileToOpenOnReady = null;
 
+appLog('Application starting. PID:', process.pid, 'Argv:', process.argv);
+
 // Single-instance lock
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+  appLog('Single-instance lock denied. Exiting secondary process.');
   app.quit();
+  process.exit(0);
 } else {
+  appLog('Single-instance lock acquired successfully.');
   app.on('second-instance', (_event, commandLine, workingDirectory) => {
+    appLog('Second-instance event received. commandLine:', commandLine);
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
+      if (process.platform === 'win32') {
+        mainWindow.setAlwaysOnTop(true);
+        mainWindow.setAlwaysOnTop(false);
+      }
     }
     const targetFile = findCadFileInArgv(commandLine, workingDirectory || process.cwd());
     if (targetFile && mainWindow) {
@@ -100,6 +134,7 @@ function setupProtocolHandler() {
 }
 
 function createWindow() {
+  appLog('createWindow: start');
   const iconPath = process.platform === 'win32'
     ? path.join(__dirname, '..', 'assets', 'icons', 'icon.ico')
     : path.join(__dirname, '..', 'assets', 'icons', 'icon.png');
@@ -110,6 +145,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: 'support-fins',
+    show: true,
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     backgroundColor: '#0f1115',
     webPreferences: {
@@ -124,9 +160,29 @@ function createWindow() {
   registerIpcHandlers(mainWindow);
   Menu.setApplicationMenu(buildApplicationMenu(mainWindow));
 
+  mainWindow.once('ready-to-show', () => {
+    appLog('mainWindow: ready-to-show');
+    mainWindow.focus();
+    if (process.platform === 'win32') {
+      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(false);
+    }
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+    appLog('mainWindow: did-fail-load', errorCode, errorDescription, validatedURL);
+    console.error('Failed to load:', errorCode, errorDescription, validatedURL);
+    dialog.showErrorBox(
+      'Support Fins Startup Error',
+      `Failed to load application URL:\n${validatedURL}\n\nError: ${errorDescription} (${errorCode})`
+    );
+  });
+
+  appLog('mainWindow: loadURL app://localhost/index.html');
   mainWindow.loadURL('app://localhost/index.html');
 
   mainWindow.webContents.once('did-finish-load', () => {
+    appLog('mainWindow: did-finish-load');
     if (fileToOpenOnReady) {
       sendOpenFile(mainWindow, fileToOpenOnReady);
       fileToOpenOnReady = null;
@@ -134,11 +190,15 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    appLog('mainWindow: closed');
     mainWindow = null;
   });
+  appLog('createWindow: complete');
 }
 
 app.whenReady().then(() => {
+  if (!gotTheLock) return;
+  appLog('app: whenReady');
   setupProtocolHandler();
   fileToOpenOnReady = findCadFileInArgv(process.argv);
   createWindow();
@@ -149,5 +209,11 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  appLog('app: window-all-closed');
+  if (process.platform !== 'darwin') {
+    app.quit();
+    setTimeout(() => process.exit(0), 400);
+  }
 });
+
+

@@ -1,10 +1,16 @@
-const { ipcMain, dialog } = require('electron');
+const { ipcMain, dialog, BrowserWindow } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 
+let handlersRegistered = false;
+
 function registerIpcHandlers(mainWindow) {
+  if (handlersRegistered) return;
+  handlersRegistered = true;
+
   ipcMain.handle('dialog:openFile', async (_event, opts = {}) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
       title: opts.title || 'Open 3D Model',
       filters: opts.filters || [],
       properties: ['openFile']
@@ -22,7 +28,8 @@ function registerIpcHandlers(mainWindow) {
   });
 
   ipcMain.handle('dialog:saveFile', async (_event, opts = {}) => {
-    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
       title: opts.title || 'Save File',
       defaultPath: opts.defaultPath,
       filters: opts.filters || []
@@ -42,10 +49,12 @@ function registerIpcHandlers(mainWindow) {
   });
 
   ipcMain.on('window:setTitle', (_event, title) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setTitle(title ? `${title} - support-fins` : 'support-fins');
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    if (win && !win.isDestroyed()) {
+      win.setTitle(title ? `${title} - support-fins` : 'support-fins');
     }
   });
 }
 
 module.exports = { registerIpcHandlers };
+
