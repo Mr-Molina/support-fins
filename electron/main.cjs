@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, Menu, dialog } = require('electron');
+const { app, BrowserWindow, protocol, Menu, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { registerIpcHandlers } = require('./ipc.cjs');
@@ -176,6 +176,33 @@ function createWindow() {
       'Support Fins Startup Error',
       `Failed to load application URL:\n${validatedURL}\n\nError: ${errorDescription} (${errorCode})`
     );
+  });
+
+  // Open all external web links in the system's default browser, never inside the application
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:') {
+        appLog('setWindowOpenHandler intercepted external url:', url);
+        shell.openExternal(url);
+      }
+    } catch (e) {
+      console.error('Failed to open external url:', e);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:') {
+        event.preventDefault();
+        appLog('will-navigate intercepted external url:', url);
+        shell.openExternal(url);
+      }
+    } catch (e) {
+      console.error('Failed to open external url:', e);
+    }
   });
 
   appLog('mainWindow: loadURL app://localhost/index.html');

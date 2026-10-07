@@ -117,3 +117,38 @@ export function setDocumentTitle(title) {
     window.desktopAPI.setTitle(title);
   }
 }
+
+/**
+ * Open an external web link in the system default browser.
+ * On desktop: requests the native OS to launch the system default browser via shell.openExternal.
+ * On browser: opens a new tab via window.open(url, '_blank', 'noopener,noreferrer').
+ *
+ * @param {string} url
+ */
+export function openExternal(url) {
+  if (isDesktop() && window.desktopAPI?.openExternal) {
+    window.desktopAPI.openExternal(url);
+    return;
+  }
+  if (typeof window !== 'undefined' && window.open) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
+// Intercept DOM link clicks: ensures any <a> clicks to http/https/mailto trigger the external browser
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('click', (e) => {
+    const a = e.target?.closest?.('a');
+    if (!a || !a.href) return;
+    try {
+      const url = new URL(a.href, window.location.href);
+      if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:') {
+        if (isDesktop()) {
+          e.preventDefault();
+          openExternal(a.href);
+        }
+      }
+    } catch (_) {}
+  }, true);
+}
+

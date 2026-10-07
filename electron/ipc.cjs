@@ -1,4 +1,4 @@
-const { ipcMain, dialog, BrowserWindow } = require('electron');
+const { ipcMain, dialog, BrowserWindow, shell } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 
@@ -53,6 +53,19 @@ function registerIpcHandlers(mainWindow) {
     if (win && !win.isDestroyed()) {
       win.setTitle(title ? `${title} - support-fins` : 'support-fins');
     }
+  });
+
+  ipcMain.handle('shell:openExternal', async (_event, url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:') {
+        await shell.openExternal(url);
+        return true;
+      }
+    } catch (err) {
+      console.error('shell:openExternal error:', err);
+    }
+    return false;
   });
 }
 

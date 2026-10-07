@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('desktopAPI', {
 
   setTitle: (title) => ipcRenderer.send('window:setTitle', title),
 
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+
   onFileOpen: (callback) => {
     const handler = (_event, file) => callback(file);
     ipcRenderer.on('app:openFile', handler);
