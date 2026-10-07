@@ -96,12 +96,47 @@ export function buildTopology(geometry) {
     }
   }
 
+  // Principal axes and dimensions via vertex covariance
+  let sumX = 0, sumY = 0, sumZ = 0;
+  const nVerts = nFaces * 3;
+  let principalAxes = {
+    long: [0, 0, 1], mid: [0, 1, 0], short: [1, 0, 0],
+    dimensions: { long: 1, mid: 1, short: 1 },
+  };
+  if (nVerts >= 3) {
+    for (let p = 0; p < pos.length; p += 3) {
+      sumX += pos[p]; sumY += pos[p + 1]; sumZ += pos[p + 2];
+    }
+    const mx = sumX / nVerts, my = sumY / nVerts, mz = sumZ / nVerts;
+    let cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0;
+    for (let p = 0; p < pos.length; p += 3) {
+      const dx = pos[p] - mx, dy = pos[p + 1] - my, dz = pos[p + 2] - mz;
+      cxx += dx * dx; cxy += dx * dy; cxz += dx * dz;
+      cyy += dy * dy; cyz += dy * dz; czz += dz * dz;
+    }
+    const eig = eigenSymmetric3([
+      cxx / nVerts, cxy / nVerts, cxz / nVerts,
+      cyy / nVerts, cyz / nVerts, czz / nVerts,
+    ]);
+    principalAxes = {
+      long: eig[0].vec,
+      mid: eig[1].vec,
+      short: eig[2].vec,
+      dimensions: {
+        long: Math.sqrt(Math.max(0, eig[0].val)) * Math.sqrt(12),
+        mid: Math.sqrt(Math.max(0, eig[1].val)) * Math.sqrt(12),
+        short: Math.sqrt(Math.max(0, eig[2].val)) * Math.sqrt(12),
+      },
+    };
+  }
+
   return {
     pos, nFaces, nrm, area,
     adjA: Int32Array.from(adjA),
     adjB: Int32Array.from(adjB),
     vertexCount: weld.size,
     edgeCount: firstFace.size,
+    principalAxes,
     // scratch, reused across analyze() calls so a gizmo drag allocates nothing
     _zr: new Float64Array(nFaces * 3),
     _parent: new Int32Array(nFaces),
@@ -109,6 +144,62 @@ export function buildTopology(geometry) {
     _kept: new Uint8Array(nFaces),
     _onBed: new Uint8Array(nFaces),
   };
+}
+
+/**
+ * 3x3 symmetric eigensolver using Jacobi rotations.
+ * A is [A00, A01, A02, A11, A12, A22].
+ * Returns [ { val, vec }, ... ] sorted by eigenvalue descending.
+ */
+export function eigenSymmetric3(A) {
+  let V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  let a = [
+    [A[0], A[1], A[2]],
+    [A[1], A[3], A[4]],
+    [A[2], A[4], A[5]],
+  ];
+  for (let iter = 0; iter < 25; iter++) {
+    let p = 0, q = 1, max = Math.abs(a[0][1]);
+    if (Math.abs(a[0][2]) > max) { p = 0; q = 2; max = Math.abs(a[0][2]); }
+    if (Math.abs(a[1][2]) > max) { p = 1; q = 2; max = Math.abs(a[1][2]); }
+    if (max < 1e-12) break;
+    const diff = a[q][q] - a[p][p];
+    let t;
+    if (Math.abs(diff) < 1e-12) {
+      t = a[p][q] > 0 ? 1 : -1;
+    } else {
+      const phi = diff / (2 * a[p][q]);
+      t = 1 / (Math.abs(phi) + Math.hypot(phi, 1));
+      if (phi < 0) t = -t;
+    }
+    const c = 1 / Math.hypot(t, 1);
+    const s = t * c;
+    const tau = s / (1 + c);
+    const apq = a[p][q];
+    a[p][q] = 0;
+    a[p][p] -= t * apq;
+    a[q][q] += t * apq;
+    for (let j = 0; j < 3; j++) {
+      if (j !== p && j !== q) {
+        const minP = Math.min(j, p), maxP = Math.max(j, p);
+        const minQ = Math.min(j, q), maxQ = Math.max(j, q);
+        const ajp = a[minP][maxP];
+        const ajq = a[minQ][maxQ];
+        a[minP][maxP] = ajp - s * (ajq + tau * ajp);
+        a[minQ][maxQ] = ajq + s * (ajp - tau * ajq);
+      }
+    }
+    for (let j = 0; j < 3; j++) {
+      const vjp = V[j][p], vjq = V[j][q];
+      V[j][p] = vjp - s * (vjq + tau * vjp);
+      V[j][q] = vjq + s * (vjp - tau * vjq);
+    }
+  }
+  return [
+    { val: a[0][0], vec: [V[0][0], V[1][0], V[2][0]] },
+    { val: a[1][1], vec: [V[0][1], V[1][1], V[2][1]] },
+    { val: a[2][2], vec: [V[0][2], V[1][2], V[2][2]] },
+  ].sort((x, y) => y.val - x.val);
 }
 
 /**

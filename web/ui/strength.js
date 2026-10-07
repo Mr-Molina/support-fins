@@ -136,6 +136,24 @@ function setLoadDir(local) {
   syncLoadUI();
 }
 
+export let loadMode = 'pull';
+
+export function setLoadMode(m) {
+  if (m !== 'pull' && m !== 'lever') return;
+  loadMode = m;
+  const pullBtn = el('load-mode-pull');
+  const leverBtn = el('load-mode-lever');
+  if (pullBtn) {
+    pullBtn.classList.toggle('active', loadMode === 'pull');
+    pullBtn.setAttribute('aria-pressed', loadMode === 'pull');
+  }
+  if (leverBtn) {
+    leverBtn.classList.toggle('active', loadMode === 'lever');
+    leverBtn.setAttribute('aria-pressed', loadMode === 'lever');
+  }
+  updateLoadReadout();
+}
+
 /**
  * The qualitative strength verdict for the CURRENT pose. World +Z is the build
  * axis once the part is seated, so the load direction in world space is all
@@ -151,7 +169,12 @@ export function updateLoadReadout() {
     return;
   }
   const w = loadDir.clone().applyQuaternion(part.quaternion);
-  const al = loadAlignment([w.x, w.y, w.z]);
+  const rotM = new THREE.Matrix3().setFromMatrix4(part.matrixWorld);
+  const al = loadAlignment([w.x, w.y, w.z], {
+    mode: loadMode,
+    topo: topology,
+    rot: rotM.elements,
+  });
   if (!al) { note.hidden = true; suggestBtn.hidden = true; return; }
   note.textContent = al.text;
   note.className = `load-verdict ${al.quality}`;
@@ -217,6 +240,9 @@ for (const key of Object.keys(PAD_DIRS)) {
 }
 el('load-clear').addEventListener('click', clearLoad);
 
+el('load-mode-pull')?.addEventListener('click', () => setLoadMode('pull'));
+el('load-mode-lever')?.addEventListener('click', () => setLoadMode('lever'));
+
 // Turn the part to the strongest PRINTABLE pose for the placed load. Unlike
 // "Suggest orientation" (which minimises support), this is strength-driven: it
 // lays the load most in-plane, but only among poses that actually sit on the bed,
@@ -224,9 +250,17 @@ el('load-clear').addEventListener('click', clearLoad);
 // good as it gets, say so instead of turning to an equivalent orientation.
 el('load-suggest').addEventListener('click', () => {
   if (!part || !topology || !loadDir) return;
-  const pose = suggestStrengthPose(topology, [loadDir.x, loadDir.y, loadDir.z], { threshold });
+  const pose = suggestStrengthPose(topology, [loadDir.x, loadDir.y, loadDir.z], {
+    threshold,
+    mode: loadMode,
+  });
   const w = loadDir.clone().applyQuaternion(part.quaternion);
-  const cur = loadAlignment([w.x, w.y, w.z]);
+  const rotM = new THREE.Matrix3().setFromMatrix4(part.matrixWorld);
+  const cur = loadAlignment([w.x, w.y, w.z], {
+    mode: loadMode,
+    topo: topology,
+    rot: rotM.elements,
+  });
   const note = el('load-note');
   if (!pose || (cur && pose.cross >= cur.cross - 0.05)) {
     note.textContent = 'This is about the strongest printable orientation for this '

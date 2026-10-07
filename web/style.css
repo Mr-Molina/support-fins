@@ -592,6 +592,9 @@ html, body {
 #orient .loadfx .loadfx-lede { flex-basis: 100%; margin: 0 0 3px;
   font-size: 13px; color: var(--text); }
 #orient .loadfx .loadfx-lede strong { color: var(--accent); }
+#orient .loadfx .load-mode-group { flex-basis: 100%; display: grid;
+  grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 2px 0 4px; }
+#orient .loadfx .load-mode-group .btn { padding: 4px 6px; font-size: 11px; }
 #orient .loadfx .strength-pad { flex-basis: 100%; display: grid;
   grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 2px 0; }
 #orient .loadfx .strength-pad .btn { padding: 5px 0; font-size: 13px;

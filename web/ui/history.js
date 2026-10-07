@@ -7,7 +7,7 @@
 import { el } from './dom.js';
 import { controls } from './scene.js';
 import { removedSigs, restoreRemovals, syncRemoveUI } from './remove.js';
-import { loadDir, replaceLoadDir, updateLoadArrowMesh, syncLoadUI } from './strength.js';
+import { loadDir, replaceLoadDir, updateLoadArrowMesh, syncLoadUI, loadMode, setLoadMode } from './strength.js';
 import {
   part, drawnWalls, finMode, finsVisible, drawAugment,
   setDrawnWalls, setLayPlacing, setFinMode, setFinsVisible, setDrawAugment,
@@ -30,6 +30,7 @@ function snapshot() {
     quat: [q.x, q.y, q.z, q.w],
     walls: drawnWalls.map((w) => ({ kind: w.kind, face: w.face, a: w.a.clone(), b: w.b?.clone() })),
     load: loadDir ? loadDir.clone() : null,
+    loadMode,
     finMode, finsVisible, drawAugment,
     removedSigs: [...removedSigs],
     coverage: el('coverage-slider') ? parseFloat(el('coverage-slider').value) : 0.5,
@@ -50,6 +51,7 @@ function restoreState(s) {
   setDrawnWalls(s.walls.map((w) => ({ kind: w.kind, face: w.face, a: w.a.clone(), b: w.b?.clone(),
                                        ok: false, info: null })));
   replaceLoadDir(s.load ? s.load.clone() : null);
+  if (s.loadMode) setLoadMode(s.loadMode);
   restoreRemovals(s.removedSigs);
   setLayPlacing(false);
   controls.enabled = true;

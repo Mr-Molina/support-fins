@@ -289,16 +289,61 @@ export const PAD_DIRS = {
 
 /**
  * Qualitative strength readout for a load in the CURRENT pose. `dirWorld` is the
- * load direction in seated print space (so world +Z is the build axis). Pull
- * model only: the critical tensile direction IS the applied force. (Lever -- where
- * the part bends and the tensile stress runs along the beam, perpendicular to the
- * push -- picks a different pose and can't be inferred from one arrow; it's a
- * future toggle, not a default.)
+ * load direction in seated print space (so world +Z is the build axis).
+ *
+ * Supports two load models:
+ * 1. Pull (tension): critical tensile direction is the applied force vector.
+ *    Strongest when load lies in the layer plane (along continuous filament paths).
+ * 2. Lever (bending): lateral force exerts a bending moment on the part's lever arm,
+ *    inducing longitudinal tensile stress along the beam axis. Strongest when the
+ *    beam lies flat in the layer plane so continuous perimeters carry the bending moment,
+ *    and weakest when the beam stands upright across the layers (high risk of snap,
+ *    especially across thin cross-sections).
  */
-export function loadAlignment(dirWorld) {
+export function loadAlignment(dirWorld, { mode = 'pull', topo = null, rot = null } = {}) {
+  if (!dirWorld) return null;
+  const n = Math.hypot(dirWorld[0], dirWorld[1], dirWorld[2]);
+  if (n < 1e-9) return null;
+  const d = [dirWorld[0] / n, dirWorld[1] / n, dirWorld[2] / n];
+
+  if (mode === 'lever' && topo?.principalAxes) {
+    const pAxes = topo.principalAxes;
+    // World beam axis and short (thinnest cross-section) axis
+    const bWorld = rot ? applyRot(rot, pAxes.long) : pAxes.long;
+    const sWorld = rot ? applyRot(rot, pAxes.short) : pAxes.short;
+
+    const bLen = Math.hypot(bWorld[0], bWorld[1], bWorld[2]);
+    const bNorm = bLen > 1e-9 ? [bWorld[0] / bLen, bWorld[1] / bLen, bWorld[2] / bLen] : [0, 0, 1];
+
+    // For a lever / cantilever beam, bending stress acts longitudinally along the beam:
+    // |b.z| is the fraction of tensile stress acting across the build layers.
+    const cross = Math.abs(bNorm[2]);
+
+    // Check if the load direction is aligned with the part's thinnest cross-section
+    const dotShort = Math.abs(d[0] * sWorld[0] + d[1] * sWorld[1] + d[2] * sWorld[2]);
+    const dims = pAxes.dimensions;
+    const isThin = dotShort > 0.65 && (dims.short < 0.75 * dims.mid);
+
+    let quality = 'good';
+    let text = 'The lever bends along continuous layer strands — the strong direction. Good.';
+    if (cross > 0.866) {
+      quality = 'poor';
+      text = isThin
+        ? 'Lever bends the upright across its thinnest cross-section, pulling horizontal layers apart — high risk of snap.'
+        : 'The lever bends across the layers — high risk of layer delamination under bending.';
+    } else if (cross > 0.5) {
+      quality = 'mixed';
+      text = isThin
+        ? 'The lever partly bends across layers, acting on the thinnest section.'
+        : 'The lever partly bends across the layers.';
+    }
+    return { cross, quality, text, mode: 'lever', isThin };
+  }
+
+  // Default: Pull model
   const cross = crossFraction(dirWorld);
   if (cross == null) return null;
-  return { cross, ...alignQuality(cross) };
+  return { cross, ...alignQuality(cross), mode: 'pull', isThin: false };
 }
 
 /**
@@ -307,24 +352,25 @@ export function loadAlignment(dirWorld) {
  * try candidate orientations that direction swings relative to the build axis and
  * we want the pose that lays it most in-plane.
  *
- * The guard is the whole point. A pure strength solver is exactly what produced
- * the spike's "155mm tall, balanced on its own needle" pose -- geometrically the
- * layers were perfect, the print was impossible. So we only consider poses that
- * actually SIT on the plate (a real bed footprint, not a point) and whose
- * printability cost is within a bounded budget of the best available; among those,
- * we pick the strongest. Returns null if nothing beats simply not tilting.
+ * In Pull mode, minimizes the load arrow's projection on the build axis.
+ * In Lever mode, minimizes the beam axis's projection on the build axis, laying
+ * the lever flat on the bed so continuous strands carry the bending moment.
  */
-export function suggestStrengthPose(topo, dirLocal, { threshold = 45 } = {}) {
+export function suggestStrengthPose(topo, dirLocal, { threshold = 45, mode = 'pull' } = {}) {
   const dl = (() => {
     const n = Math.hypot(dirLocal[0], dirLocal[1], dirLocal[2]);
     return n < 1e-9 ? null : [dirLocal[0] / n, dirLocal[1] / n, dirLocal[2] / n];
   })();
   if (!dl) return null;
 
+  const pAxes = topo?.principalAxes;
+  const isLever = mode === 'lever' && !!pAxes;
+  const targetLocal = isLever ? pAxes.long : dl;
+
   const cands = candidateDowns(topo).map((d) => {
     const rot = rotFromTo(d, DOWN);
     const a = analyze(topo, threshold, rot);
-    const cross = Math.abs(applyRot(rot, dl)[2]);   // rot orthonormal, dl unit -> result unit
+    const cross = Math.abs(applyRot(rot, targetLocal)[2]);   // rot orthonormal, targetLocal unit -> result unit
     // Same printability proxy suggestOrientations' pass 1 uses (overhang dominates,
     // bed contact helps, height is a mild penalty) -- lower is better.
     const printCost = a.overArea + Math.max(0, 200 - a.bedArea) * 0.25 + a.size.z * 2;
@@ -344,6 +390,16 @@ export function suggestStrengthPose(topo, dirLocal, { threshold = 45 } = {}) {
   affordable.sort((p, r) => p.cross - r.cross);
 
   const best = affordable[0];
-  return { rot: best.rot, cross: best.cross, ...alignQuality(best.cross),
-           height: best.height, over: best.over, bedArea: best.bedArea };
+  let verdict = alignQuality(best.cross);
+  if (isLever) {
+    if (best.cross <= 0.5) {
+      verdict = { quality: 'good', text: 'The lever bends along continuous layer strands — the strong direction. Good.' };
+    } else if (best.cross <= 0.866) {
+      verdict = { quality: 'mixed', text: 'The lever partly bends across the layers.' };
+    } else {
+      verdict = { quality: 'poor', text: 'The lever bends across the layers — high risk of layer delamination under bending.' };
+    }
+  }
+  return { rot: best.rot, cross: best.cross, ...verdict,
+           height: best.height, over: best.over, bedArea: best.bedArea, mode };
 }

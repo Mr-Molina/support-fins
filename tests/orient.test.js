@@ -166,3 +166,39 @@ Deno.test('suggestStrengthPose: an already in-plane load needs no turn (returns 
   // Either nothing beats the flat pose (null), or the best it finds is still in-plane.
   assert(pose === null || pose.cross < 0.5, 'must not turn a flat slab into a worse-aligned pose');
 });
+
+// ------------------------------------------------------------ Lever / Bending mode
+
+Deno.test('loadAlignment (lever mode): a lateral load on an upright post is poor and flags thinnest section', () => {
+  // A tall column: 10mm in X (thin), 30mm in Y (mid), 100mm in Z (long upright)
+  const topo = blockTopo(0, 10, 0, 30, 0, 100);
+  assert(topo.principalAxes, 'buildTopology must compute principalAxes');
+  // Load points in X (along the thin cross-section), levering the upright
+  const al = loadAlignment([1, 0, 0], { mode: 'lever', topo });
+  assert(al !== null, 'loadAlignment returned null in lever mode');
+  assert(al.quality === 'poor', `expected poor quality under levering, got ${al.quality}`);
+  assert(al.isThin === true, 'expected thin section detection when force acts along short axis');
+  assert(al.text.includes('thinnest cross-section'), `expected thinnest cross-section warning, got: ${al.text}`);
+  assertClose(al.cross, 1.0, 1e-3, 'beam upright means cross should be ~1.0');
+});
+
+Deno.test('loadAlignment (lever mode): a load on a flat beam is good (bends along layers)', () => {
+  // A flat beam: 100mm in X (long beam on plate), 30mm in Y (width), 10mm in Z (height)
+  const topo = blockTopo(0, 100, 0, 30, 0, 10);
+  // Force pushes in Y (lateral on the flat beam)
+  const al = loadAlignment([0, 1, 0], { mode: 'lever', topo });
+  assert(al !== null, 'loadAlignment returned null');
+  assert(al.quality === 'good', `expected good quality when lever lies in layer plane, got ${al.quality}`);
+  assert(al.text.includes('continuous layer strands'), `expected continuous strands copy, got: ${al.text}`);
+  assertClose(al.cross, 0.0, 1e-3, 'beam in XY plane means cross should be 0.0');
+});
+
+Deno.test('suggestStrengthPose (lever mode): rotates an upright post with lateral force onto its side', () => {
+  // An upright post: 10mm x 20mm x 100mm tall in Z.
+  const topo = blockTopo(0, 10, 0, 20, 0, 100);
+  const pose = suggestStrengthPose(topo, [1, 0, 0], { threshold: 45, mode: 'lever' });
+  assert(pose, 'expected a suggested pose for upright post in lever mode');
+  assert(pose.quality === 'good', `expected good quality for suggested lever pose, got ${pose.quality}`);
+  assert(pose.cross < 0.5, `lever beam should be in layer plane, got cross ${pose.cross}`);
+  assert(pose.height <= 20.1, `suggested pose should lay the 100mm post down, got height ${pose.height}`);
+});
