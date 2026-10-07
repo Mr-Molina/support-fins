@@ -266,13 +266,7 @@ export function shade() {
   // fires when this pose actually has overhangs to support (a clean/flat pose says
   // its piece via s-flat-note); the fix is almost always a better orientation.
   const warn = el('over-warn');
-  if (res.regions.length > 0 && dropped > 0) {
-    warn.textContent = `⚠ ${dropped} small overhang${dropped === 1 ? '' : 's'} `
-      + `(hole ceilings, slots, bore tops) print unsupported this way up and may come `
-      + `out rough. Try Suggest orientation to point them up.`;
-  } else {
-    warn.textContent = '';
-  }
+  if (warn) warn.textContent = '';
   el('s-overarea').textContent = `${res.overArea.toFixed(0)} mm²`;
   el('s-bed').textContent = `${res.bedArea.toFixed(0)} mm²`;
   el('s-bed').classList.toggle('warn', res.bedArea < 1);

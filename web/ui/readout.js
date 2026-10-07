@@ -354,7 +354,7 @@ function updateFinReadout(built, ms) {
     // rides in the (i) rather than the panel.
     help.push(`${built.unserved} overhang${built.unserved === 1 ? ' is' : 's are'} `
             + 'too shallow for a fin this way up. Tilt the part steeper so a fin can '
-            + 'follow it (try Suggest orientation), or add a wall by hand.');
+            + 'follow it, or add a wall by hand.');
   }
   if (built.skipped?.bore) {
     // A support standing INSIDE a bore or slot scars a surface you can't clean --
