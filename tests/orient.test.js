@@ -7,7 +7,7 @@ import { WEB, assert, assertClose, blockTopo, tiltedBlockTopo, rotX } from './_u
 
 const { suggestOrientations, suggestStrengthPose, layerVerdict, loadAlignment, PAD_DIRS } =
   await import(`${WEB}orient.js`);
-const { analyze } = await import(`${WEB}overhangs.js`);
+const { analyze, MIN_STABLE_BED_AREA } = await import(`${WEB}overhangs.js`);
 
 const IDENT = rotX(0);   // as-loaded pose
 
@@ -202,3 +202,28 @@ Deno.test('suggestStrengthPose (lever mode): rotates an upright post with latera
   assert(pose.cross < 0.5, `lever beam should be in layer plane, got cross ${pose.cross}`);
   assert(pose.height <= 20.1, `suggested pose should lay the 100mm post down, got height ${pose.height}`);
 });
+
+Deno.test('suggestStrengthPose: rejects knife-edge / needle poses and enforces stable bed contact', () => {
+  // A tilted block that has a small chamfer/corner contact when oriented at 45deg
+  const topo = tiltedBlockTopo(0, 60, 0, 40, 0, 12, 60);
+  assert(topo.totalArea > 0, 'totalArea must be populated on topology');
+  const pose = suggestStrengthPose(topo, [0, 0, 1], { threshold: 45 });
+  if (pose) {
+    assert(pose.bedArea >= Math.max(4.0, Math.min(MIN_STABLE_BED_AREA, topo.totalArea * 0.02)),
+      `suggested pose must have stable bed contact area, got ${pose.bedArea}`);
+  }
+});
+
+Deno.test('suggestStrengthPose: tie-breaks equal-cross candidate poses by printability and bed area', () => {
+  // A block with dimensions 10 x 50 x 100:
+  // With load along Y [0, 1, 0], laying flat on the 50x100 face vs lying on the 10x100 face both have cross = 0.
+  // The 50x100 face has 5x larger bed area and lower height (10mm vs 50mm).
+  const topo = blockTopo(0, 10, 0, 50, 0, 100);
+  const pose = suggestStrengthPose(topo, [0, 1, 0], { threshold: 45, mode: 'pull' });
+  assert(pose, 'expected suggested pose');
+  assertClose(pose.cross, 0.0, 1e-3, 'cross should be 0');
+  // Height must be 10mm (the broadest face on bed, 50x100), not 50mm (the narrow edge)
+  assertClose(pose.height, 10, 1e-1, `expected part to lie on its widest 50x100 face (height 10mm), got ${pose.height}`);
+  assert(pose.bedArea >= 5000, `expected bed area >= 5000 mm^2, got ${pose.bedArea}`);
+});
+

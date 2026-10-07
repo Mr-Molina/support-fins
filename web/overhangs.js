@@ -17,6 +17,7 @@
 export const BED_EPS = 0.35;          // mm; a face this close to the plate IS the bottom
 export const MIN_REGION_AREA = 12.0;  // mm^2; ignore slivers
 export const DEFAULT_THRESHOLD = 45;  // degrees from the plate
+export const MIN_STABLE_BED_AREA = 25.0;  // mm^2; knife-edges and needle points fail this threshold
 
 /**
  * A face sitting EXACTLY on the threshold is self-supporting and must not be
@@ -130,8 +131,11 @@ export function buildTopology(geometry) {
     };
   }
 
+  let totalArea = 0;
+  for (let f = 0; f < nFaces; f++) totalArea += area[f];
+
   return {
-    pos, nFaces, nrm, area,
+    pos, nFaces, nrm, area, totalArea,
     adjA: Int32Array.from(adjA),
     adjB: Int32Array.from(adjB),
     vertexCount: weld.size,

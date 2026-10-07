@@ -19,7 +19,7 @@
  * can actually be finned. Candidates need no convex-hull kernel: a part rests on
  * a flat face, so the large-area normal clusters ARE its stable down-faces.
  */
-import { analyze } from './overhangs.js';
+import { analyze, MIN_STABLE_BED_AREA } from './overhangs.js';
 import { buildFins } from './fins.js';
 
 /** Column-major (THREE.Matrix3.elements) rotation taking unit `a` onto unit `b`. */
@@ -377,17 +377,18 @@ export function suggestStrengthPose(topo, dirLocal, { threshold = 45, mode = 'pu
     return { rot, cross, printCost, height: a.size.z, over: a.overArea, bedArea: a.bedArea };
   });
 
-  // A pose with ~no bed contact is a tip/needle -- unprintable regardless of how
-  // nicely the layers line up. Drop those before ranking; if that leaves nothing,
-  // there's no printable pose to recommend.
-  const seated = cands.filter((c) => c.bedArea >= 1);
+  // A pose with ~no bed contact is a tip/needle/knife-edge -- unprintable regardless of how
+  // nicely the layers line up. Require a minimum stable bed footprint.
+  const minBed = Math.max(4.0, Math.min(MIN_STABLE_BED_AREA, (topo?.totalArea ?? 1000) * 0.02));
+  const seated = cands.filter((c) => c.bedArea >= minBed);
   if (!seated.length) return null;
 
   // Bound the strength search by printability: only poses within a budget of the
   // most printable one are eligible, so we never trade a sane print for a tower.
   const bestPrint = Math.min(...seated.map((c) => c.printCost));
   const affordable = seated.filter((c) => c.printCost <= bestPrint + 60);
-  affordable.sort((p, r) => p.cross - r.cross);
+  // Tie-break candidates with equal cross-fraction by printability cost and larger bed contact area
+  affordable.sort((p, r) => (p.cross - r.cross) || (p.printCost - r.printCost) || (r.bedArea - p.bedArea));
 
   const best = affordable[0];
   let verdict = alignQuality(best.cross);
