@@ -270,6 +270,24 @@ export function layerVerdict(size) {
 }
 
 /**
+ * Canonical world load directions available on the Strength direction pad.
+ * Includes cardinal axes (up, down, left, right, front, back) and 45-degree
+ * elevation diagonals (upleft, upright, downleft, downright).
+ */
+export const PAD_DIRS = {
+  upleft:    [-Math.SQRT1_2, 0,  Math.SQRT1_2],
+  up:        [0, 0, 1],
+  upright:   [ Math.SQRT1_2, 0,  Math.SQRT1_2],
+  left:      [-1, 0, 0],
+  right:     [1, 0, 0],
+  downleft:  [-Math.SQRT1_2, 0, -Math.SQRT1_2],
+  down:      [0, 0, -1],
+  downright: [ Math.SQRT1_2, 0, -Math.SQRT1_2],
+  front:     [0, -1, 0],
+  back:      [0, 1, 0],
+};
+
+/**
  * Qualitative strength readout for a load in the CURRENT pose. `dirWorld` is the
  * load direction in seated print space (so world +Z is the build axis). Pull
  * model only: the critical tensile direction IS the applied force. (Lever -- where

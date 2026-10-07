@@ -3,7 +3,8 @@
  * and the "turn to the strongest printable pose" button, plus the layer-line view.
  */
 import * as THREE from 'three';
-import { loadAlignment, suggestStrengthPose } from '../orient.js';
+import { loadAlignment, suggestStrengthPose, PAD_DIRS } from '../orient.js';
+export { PAD_DIRS };
 import { el } from './dom.js';
 import { scene } from './scene.js';
 import { histPush } from './history.js';
@@ -165,11 +166,7 @@ export function updateLoadReadout() {
 // a handful of buttons is the honest input -- no 3D aiming, no face-hunting, and
 // nothing that collides with click-to-lay-flat. Directions are WORLD-relative (as
 // the part sits on the bed); stored local so the arrow tracks the pose as it turns.
-const PAD_DIRS = {
-  up:    [0, 0, 1],  down:  [0, 0, -1],
-  right: [1, 0, 0],  left:  [-1, 0, 0],
-  back:  [0, 1, 0],  front: [0, -1, 0],
-};
+// Canonical direction vectors (cardinal and diagonal) are declared in PAD_DIRS (orient.js).
 
 /** Point the load along a world direction (one pad button). */
 function setLoadWorld(key) {
@@ -198,7 +195,7 @@ export function syncLoadUI() {
   if (has && part) {
     const w = loadDir.clone().applyQuaternion(part.quaternion);
     for (const [key, [x, y, z]] of Object.entries(PAD_DIRS)) {
-      if (w.x * x + w.y * y + w.z * z > 0.999) { activeKey = key; break; }
+      if (w.x * x + w.y * y + w.z * z > 0.99) { activeKey = key; break; }
     }
   }
   for (const key of Object.keys(PAD_DIRS)) {

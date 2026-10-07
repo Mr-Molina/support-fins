@@ -593,8 +593,19 @@ html, body {
   font-size: 13px; color: var(--text); }
 #orient .loadfx .loadfx-lede strong { color: var(--accent); }
 #orient .loadfx .strength-pad { flex-basis: 100%; display: grid;
-  grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 2px 0; }
-#orient .loadfx .strength-pad .btn { padding: 5px 6px; font-size: 13px; }
+  grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 2px 0; }
+#orient .loadfx .strength-pad .btn { padding: 5px 0; font-size: 13px;
+  grid-column: span 2; display: flex; align-items: center; justify-content: center; }
+#orient .loadfx .strength-pad .strength-pad-center {
+  grid-column: span 2; display: flex; align-items: center; justify-content: center;
+}
+#orient .loadfx .strength-pad .strength-pad-center::after {
+  content: '·'; color: var(--dim); font-size: 16px; opacity: 0.4;
+}
+#orient .loadfx .strength-pad #load-front,
+#orient .loadfx .strength-pad #load-back {
+  grid-column: span 3; padding: 5px 6px;
+}
 /* keep the lay-flat button on its own row under the rotate hint */
 #orient #lay-face { flex-basis: 100%; margin-top: 2px; }
 #orient .loadfx { flex-basis: 100%; margin-top: 10px; padding-top: 8px;

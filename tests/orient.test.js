@@ -5,7 +5,7 @@
 
 import { WEB, assert, assertClose, blockTopo, tiltedBlockTopo, rotX } from './_util.js';
 
-const { suggestOrientations, suggestStrengthPose, layerVerdict, loadAlignment } =
+const { suggestOrientations, suggestStrengthPose, layerVerdict, loadAlignment, PAD_DIRS } =
   await import(`${WEB}orient.js`);
 const { analyze } = await import(`${WEB}overhangs.js`);
 
@@ -57,6 +57,58 @@ Deno.test('loadAlignment: the good/mixed boundary sits at 60 degrees from the pl
 
 Deno.test('loadAlignment: a zero-length direction is null, not a crash', () => {
   assert(loadAlignment([0, 0, 0]) === null);
+});
+
+// ------------------------------------------------------------ PAD_DIRS
+
+Deno.test('PAD_DIRS: defines 10 normalized cardinal and diagonal directions', () => {
+  const expectedKeys = ['upleft', 'up', 'upright', 'left', 'right', 'downleft', 'down', 'downright', 'front', 'back'];
+  const keys = Object.keys(PAD_DIRS);
+  assert(keys.length === 10, `expected 10 direction keys, got ${keys.length}`);
+  for (const k of expectedKeys) {
+    assert(k in PAD_DIRS, `missing direction key: ${k}`);
+    const [x, y, z] = PAD_DIRS[k];
+    const len = Math.hypot(x, y, z);
+    assertClose(len, 1.0, 1e-9, `direction ${k} must be normalized to unit length`);
+  }
+});
+
+Deno.test('PAD_DIRS: diagonals yield mixed loadAlignment verdicts at 45 degrees', () => {
+  const diagonals = ['upleft', 'upright', 'downleft', 'downright'];
+  for (const d of diagonals) {
+    const al = loadAlignment(PAD_DIRS[d]);
+    assert(al !== null, `loadAlignment returned null for ${d}`);
+    assert(al.quality === 'mixed', `expected 'mixed' for diagonal ${d}, got ${al.quality}`);
+    assertClose(al.cross, Math.SQRT1_2, 1e-9, `expected cross ~0.7071 for diagonal ${d}`);
+  }
+});
+
+Deno.test('PAD_DIRS: cardinal directions yield good or poor verdicts', () => {
+  assert(loadAlignment(PAD_DIRS.up).quality === 'poor');
+  assert(loadAlignment(PAD_DIRS.down).quality === 'poor');
+  assert(loadAlignment(PAD_DIRS.left).quality === 'good');
+  assert(loadAlignment(PAD_DIRS.right).quality === 'good');
+  assert(loadAlignment(PAD_DIRS.front).quality === 'good');
+  assert(loadAlignment(PAD_DIRS.back).quality === 'good');
+});
+
+Deno.test('PAD_DIRS: dot product threshold 0.99 cleanly discriminates each direction', () => {
+  const entries = Object.entries(PAD_DIRS);
+  for (let i = 0; i < entries.length; i++) {
+    const [keyA, [ax, ay, az]] = entries[i];
+    // Self dot product is 1.0
+    const selfDot = ax * ax + ay * ay + az * az;
+    assertClose(selfDot, 1.0, 1e-9, `${keyA} self dot must be 1.0`);
+    assert(selfDot > 0.99, `${keyA} must match itself with threshold 0.99`);
+
+    // Cross dot products with other directions must be strictly <= cos(45deg) ~ 0.7071
+    for (let j = 0; j < entries.length; j++) {
+      if (i === j) continue;
+      const [keyB, [bx, by, bz]] = entries[j];
+      const dot = ax * bx + ay * by + az * bz;
+      assert(dot < 0.99, `${keyA} vs ${keyB} dot product (${dot}) must not exceed 0.99`);
+    }
+  }
 });
 
 // ------------------------------------------------------------ suggestOrientations
