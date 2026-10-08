@@ -6,6 +6,7 @@ Runs the BUILT single-file plugin (engine bundle inlined) against fake_orca, a
 stand-in for Orca's embedded module that slices parts with trimesh. What only a
 real OrcaSlicer build can confirm is listed in plugins/orca/README.md.
 """
+
 import importlib.util
 import json
 import pathlib
@@ -46,7 +47,10 @@ def rot_x(deg, shift=(0, 0, 0), scale=1.0):
 
 
 def loops_area(groups):
-    return sum(abs(SF.signed_area(o)) - sum(abs(SF.signed_area(h)) for h in hs) for o, hs in groups)
+    return sum(
+        abs(SF.signed_area(o)) - sum(abs(SF.signed_area(h)) for h in hs)
+        for o, hs in groups
+    )
 
 
 # ------------------------------------------------------------------ slicing core
@@ -63,7 +67,9 @@ def test_hole_is_grouped_under_its_outer():
     tube.apply_translation([0, 0, 10])
     groups = SF.group_loops(SF.slice_soup(np.asarray(tube.triangles), 10.1))
     assert len(groups) == 1 and len(groups[0][1]) == 1
-    ring = tube.section(plane_origin=[0, 0, 10.1], plane_normal=[0, 0, 1]).to_2D()[0].area
+    ring = (
+        tube.section(plane_origin=[0, 0, 10.1], plane_normal=[0, 0, 1]).to_2D()[0].area
+    )
     assert abs(loops_area(groups) - ring) / ring < 1e-9
 
 
@@ -80,15 +86,17 @@ def test_face_exactly_on_the_plane_counts_as_inside_like_orca():
     # (verified against a real Orca 2.5 slice of a finned STL in an Orca 2.5 nightly).
     box = trimesh.creation.box((10, 10, 10))
     box.apply_translation([0, 0, 5])
-    top = SF.slice_soup(np.asarray(box.triangles), 10.0)                 # top face ON the plane
+    top = SF.slice_soup(np.asarray(box.triangles), 10.0)  # top face ON the plane
     assert len(top) == 1 and abs(abs(SF.signed_area(top[0])) - 100.0) < 1e-5
-    assert SF.slice_soup(np.asarray(box.triangles), 0.0) == []           # bottom face ON the plane
+    assert (
+        SF.slice_soup(np.asarray(box.triangles), 0.0) == []
+    )  # bottom face ON the plane
 
 
 def test_overlapping_solids_split_into_shells():
     a = trimesh.creation.box((10, 10, 10))
     b = trimesh.creation.box((10, 10, 10))
-    b.apply_translation([5, 0, 0])            # overlaps a, shares no edges
+    b.apply_translation([5, 0, 0])  # overlaps a, shares no edges
     soup = np.concatenate([a.triangles, b.triangles])
     shells = SF.split_shells(soup)
     assert sorted(len(s) for s in shells) == [12, 12]
@@ -96,13 +104,25 @@ def test_overlapping_solids_split_into_shells():
 
 # ------------------------------------------------------------------ frame
 def test_slice_frame_round_trip_and_refusal():
-    f = SF.SliceFrame(np.array([100.0, 50.0]), np.array([140.0, 70.0]),
-                      (-20_000_000, -10_000_000, 20_000_000, 10_000_000), 1e-6)
+    f = SF.SliceFrame(
+        np.array([100.0, 50.0]),
+        np.array([140.0, 70.0]),
+        (-20_000_000, -10_000_000, 20_000_000, 10_000_000),
+        1e-6,
+    )
     pts = f.to_scaled(np.array([[100.0, 50.0], [140.0, 70.0], [120.0, 60.0]]))
-    assert pts.tolist() == [[-20_000_000, -10_000_000], [20_000_000, 10_000_000], [0, 0]]
+    assert pts.tolist() == [
+        [-20_000_000, -10_000_000],
+        [20_000_000, 10_000_000],
+        [0, 0],
+    ]
     with pytest.raises(ValueError):  # bbox 3x too big: not the footprint we think
-        SF.SliceFrame(np.array([0.0, 0.0]), np.array([40.0, 20.0]),
-                      (-60_000_000, -30_000_000, 60_000_000, 30_000_000), 1e-6)
+        SF.SliceFrame(
+            np.array([0.0, 0.0]),
+            np.array([40.0, 20.0]),
+            (-60_000_000, -30_000_000, 60_000_000, 30_000_000),
+            1e-6,
+        )
 
 
 # ------------------------------------------------------------------ end to end
@@ -114,14 +134,20 @@ def expected_islands(po, fins_posed):
         z = L.slice_z
         polys = []
         for mesh in [po.posed] + [trimesh.Trimesh(*_weld(sh)) for sh in shells]:
-            sec = mesh.section(plane_origin=[0, 0, z + SF.PLANE_NUDGE], plane_normal=[0, 0, 1])
+            sec = mesh.section(
+                plane_origin=[0, 0, z + SF.PLANE_NUDGE], plane_normal=[0, 0, 1]
+            )
             if sec is None:
                 continue
             planar, to3d = sec.to_2D()
             for p in planar.polygons_full:
                 ext = po._to_xy(np.asarray(p.exterior.coords), to3d)
                 holes = [po._to_xy(np.asarray(r.coords), to3d) for r in p.interiors]
-                polys.append(SPoly(ext * fake_orca.SCALE, [h * fake_orca.SCALE for h in holes]).buffer(0))
+                polys.append(
+                    SPoly(
+                        ext * fake_orca.SCALE, [h * fake_orca.SCALE for h in holes]
+                    ).buffer(0)
+                )
         out.append(unary_union(polys) if polys else SPoly())
     return out
 
@@ -144,19 +170,22 @@ def run_case(model, trafo, layer_height=0.2):
     return po, res, want, stats
 
 
-@pytest.mark.parametrize("model,deg,shift,scale", [
-    ("cube", 45, (137.25, 88.5, 12.0), 1.0),     # parked off-centre, lifted
-    ("wedge", 45, (40.0, 200.0, 0.0), 1.0),
-    ("ramp", 45, (-30.0, 5.0, 0.0), 1.004),      # with XY/Z shrinkage compensation
-])
+@pytest.mark.parametrize(
+    "model,deg,shift,scale",
+    [
+        ("cube", 45, (137.25, 88.5, 12.0), 1.0),  # parked off-centre, lifted
+        ("wedge", 45, (40.0, 200.0, 0.0), 1.0),
+        ("ramp", 45, (-30.0, 5.0, 0.0), 1.004),  # with XY/Z shrinkage compensation
+    ],
+)
 def test_fins_land_exactly_where_a_finned_stl_would(model, deg, shift, scale):
     po, res, want, stats = run_case(model, rot_x(deg, shift, scale))
     assert res.status is fake_orca.PluginResult.Success, res
     assert stats["braces"] >= 1
-    worst, total_fin = 0.0, 0.0
+    worst = 0.0
     for L, w in zip(po.layers(), want):
         got = L.islands()
-        diff = got.symmetric_difference(w).area / fake_orca.SCALE ** 2   # mm^2
+        diff = got.symmetric_difference(w).area / fake_orca.SCALE**2  # mm^2
         worst = max(worst, diff)
     # tolerance: slicer vertex rounding (1 nm) and chord differences, per layer
     assert worst < 0.05, f"{res.message}: worst per-layer mismatch {worst:.4f} mm^2"
@@ -165,8 +194,13 @@ def test_fins_land_exactly_where_a_finned_stl_would(model, deg, shift, scale):
 
 def test_fins_actually_add_material_under_the_overhang():
     po, res, want, _ = run_case("cube", rot_x(45, (50, 50, 0)))
-    part_only = fake_orca.FakePrintObject(trimesh.load(MODELS / "cube.stl"), rot_x(45, (50, 50, 0)))
-    added = sum(L.islands().area - P.islands().area for L, P in zip(po.layers(), part_only.layers()))
+    part_only = fake_orca.FakePrintObject(
+        trimesh.load(MODELS / "cube.stl"), rot_x(45, (50, 50, 0))
+    )
+    added = sum(
+        L.islands().area - P.islands().area
+        for L, P in zip(po.layers(), part_only.layers())
+    )
     assert added > 0, "no fin material was added"
 
 
@@ -174,15 +208,25 @@ def test_first_layer_fins_get_elephant_foot_compensation_like_orca():
     part = trimesh.load(MODELS / "cube.stl")
     tr = rot_x(45, (60, 60, 0))
     plain = fake_orca.FakePrintObject(part, tr)
-    efc = fake_orca.FakePrintObject(part, tr, config={"elefant_foot_compensation": "0.1",
-                                                      "elefant_foot_compensation_layers": "1"})
-    raft = fake_orca.FakePrintObject(part, tr, config={"elefant_foot_compensation": "0.1", "raft_layers": "2"})
+    efc = fake_orca.FakePrintObject(
+        part,
+        tr,
+        config={
+            "elefant_foot_compensation": "0.1",
+            "elefant_foot_compensation_layers": "1",
+        },
+    )
+    raft = fake_orca.FakePrintObject(
+        part, tr, config={"elefant_foot_compensation": "0.1", "raft_layers": "2"}
+    )
     for po in (plain, efc, raft):
         SF.SupportFinsSlicing().execute(fake_orca.Ctx(po))
     a0, e0, r0 = (po.layers()[0].islands().area for po in (plain, efc, raft))
     assert e0 < a0, "layer 0 fins were not compensated"
     assert r0 == a0, "compensation must be off on a raft, like Orca"
-    assert efc.layers()[1].islands().area == plain.layers()[1].islands().area, "only the first layer shrinks"
+    assert efc.layers()[1].islands().area == plain.layers()[1].islands().area, (
+        "only the first layer shrinks"
+    )
 
 
 def test_part_with_orca_supports_on_is_left_alone():
@@ -208,9 +252,13 @@ def test_other_steps_and_disabled_config_do_nothing():
 def test_errors_are_reported_not_raised(monkeypatch):
     part = trimesh.load(MODELS / "cube.stl")
     po = fake_orca.FakePrintObject(part, rot_x(45))
-    monkeypatch.setattr(SF, "compute_fins", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        SF, "compute_fins", lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     res = SF.SupportFinsSlicing().execute(fake_orca.Ctx(po))
-    assert res.status is fake_orca.PluginResult.RecoverableError and "boom" in res.message
+    assert (
+        res.status is fake_orca.PluginResult.RecoverableError and "boom" in res.message
+    )
 
 
 def test_plugin_registers_its_capability():
@@ -232,10 +280,12 @@ def test_mirrored_part_gets_the_same_fins_as_its_twin():
     mirror = np.diag([-1.0, 1.0, 1.0, 1.0])
     po = fake_orca.FakePrintObject(part, rot_x(35) @ mirror)
     soup = SF.posed_part_soup(po)
-    signed = np.einsum("ij,ij->i", soup[:, 0], np.cross(soup[:, 1], soup[:, 2])).sum() / 6
+    signed = (
+        np.einsum("ij,ij->i", soup[:, 0], np.cross(soup[:, 1], soup[:, 2])).sum() / 6
+    )
     assert signed > 0, "mirrored part came through inside-out"
     twin = part.copy()
-    twin.apply_transform(mirror)                      # trimesh repairs the winding itself
+    twin.apply_transform(mirror)  # trimesh repairs the winding itself
     ref = fake_orca.FakePrintObject(twin, rot_x(35))
     _, s_mir = SF.compute_fins(soup, 0.2, dict(SF._DEFAULTS))
     _, s_ref = SF.compute_fins(SF.posed_part_soup(ref), 0.2, dict(SF._DEFAULTS))
@@ -245,33 +295,64 @@ def test_mirrored_part_gets_the_same_fins_as_its_twin():
 
 def test_layer_zero_fin_surface_type_is_bottom():
     layer0 = fake_orca.Layer(slice_z=0.1, print_z=0.2, height=0.2)
-    poly = fake_orca.ExPolygon(np.array([[0, 0], [10_000_000, 0], [10_000_000, 10_000_000], [0, 10_000_000]]), [])
+    poly = fake_orca.ExPolygon(
+        np.array([[0, 0], [10_000_000, 0], [10_000_000, 10_000_000], [0, 10_000_000]]),
+        [],
+    )
     added = SF.add_fins_to_layer(layer0, [poly])
     assert added == 1
     assert len(layer0.regions()[0].slices.surfaces) == 1
-    assert layer0.regions()[0].slices.surfaces[0].surface_type == ORCA.host.SurfaceType.stBottom
+    assert (
+        layer0.regions()[0].slices.surfaces[0].surface_type
+        == ORCA.host.SurfaceType.stBottom
+    )
 
     layer1 = fake_orca.Layer(slice_z=0.3, print_z=0.4, height=0.2)
     added1 = SF.add_fins_to_layer(layer1, [poly])
     assert added1 == 1
-    assert layer1.regions()[0].slices.surfaces[0].surface_type == ORCA.host.SurfaceType.stInternal
+    assert (
+        layer1.regions()[0].slices.surfaces[0].surface_type
+        == ORCA.host.SurfaceType.stInternal
+    )
 
 
 def test_multi_region_fin_injection_targets_overlapping_region():
     layer = fake_orca.Layer(slice_z=0.3, print_z=0.4, height=0.2)
     r1 = fake_orca.LayerRegion()
     r2 = fake_orca.LayerRegion()
-    p1 = fake_orca.ExPolygon(np.array([[0, 0], [10_000_000, 0], [10_000_000, 10_000_000], [0, 10_000_000]]), [])
+    p1 = fake_orca.ExPolygon(
+        np.array([[0, 0], [10_000_000, 0], [10_000_000, 10_000_000], [0, 10_000_000]]),
+        [],
+    )
     r1.slices.set([p1], ORCA.host.SurfaceType.stInternal)
-    p2 = fake_orca.ExPolygon(np.array([[50_000_000, 0], [60_000_000, 0], [60_000_000, 10_000_000], [50_000_000, 10_000_000]]), [])
+    p2 = fake_orca.ExPolygon(
+        np.array(
+            [
+                [50_000_000, 0],
+                [60_000_000, 0],
+                [60_000_000, 10_000_000],
+                [50_000_000, 10_000_000],
+            ]
+        ),
+        [],
+    )
     r2.slices.set([p2], ORCA.host.SurfaceType.stInternal)
     layer._regions = [r1, r2]
 
-    fin2 = fake_orca.ExPolygon(np.array([[55_000_000, 5_000_000], [65_000_000, 5_000_000], [65_000_000, 15_000_000], [55_000_000, 15_000_000]]), [])
+    fin2 = fake_orca.ExPolygon(
+        np.array(
+            [
+                [55_000_000, 5_000_000],
+                [65_000_000, 5_000_000],
+                [65_000_000, 15_000_000],
+                [55_000_000, 15_000_000],
+            ]
+        ),
+        [],
+    )
     added = SF.add_fins_to_layer(layer, [fin2])
     assert added == 1
     assert len(r1.slices.surfaces) == 1
     assert len(r2.slices.surfaces) >= 1
     c = np.asarray(r2.slices.surfaces[0].expolygon.contour.as_array())
     assert c[:, 0].max() >= 60_000_000
-

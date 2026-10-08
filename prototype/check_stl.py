@@ -17,14 +17,17 @@ Five things are checked, and each one exists because it caught a real bug:
 
 The pad is deliberately NOT held to the wall rule: it is meant to fuse.
 """
+
 import sys
 import glob
 import numpy as np
 import trimesh
 
-WALL_MIN_VOL = 20.0     # mm^3; below this a body is a tine, not a wall or base
+WALL_MIN_VOL = 20.0  # mm^3; below this a body is a tine, not a wall or base
 TINE_MAX_VOL = 5.0
-TINE_MAX_H = 0.45   # mm; a tine is one layer (tineH 0.2) -- two layers is already not a tine
+TINE_MAX_H = (
+    0.45  # mm; a tine is one layer (tineH 0.2) -- two layers is already not a tine
+)
 STANDOFF = 0.2
 # The project's own non-fusing clearance, same number as the breakaway gap: if
 # 0.2mm is enough for the part to bridge over the top without welding, it is
@@ -34,34 +37,41 @@ FLANK_MIN = 0.20
 # Mirrors web/overhangs.js constant-for-constant, same as spike_overhangs.py.
 OVERHANG_COS = np.cos(np.radians(45)) + 1e-4
 BED_EPS = 0.35
+
+
 # One dial, one owner: the generator's PROP.maxUnsupportedSpan is the value,
 # read out of prop.js so the checker cannot drift from it. The literal here is
 # only the fallback if the parse ever fails (and it warns when that happens).
 def _span_from_generator():
-    import re, pathlib
-    prop_js = pathlib.Path(__file__).resolve().parent.parent / 'web' / 'prop.js'
+    import re
+    import pathlib
+
+    prop_js = pathlib.Path(__file__).resolve().parent.parent / "web" / "prop.js"
     try:
-        m = re.search(r'maxUnsupportedSpan:\s*([0-9.]+)', prop_js.read_text())
+        m = re.search(r"maxUnsupportedSpan:\s*([0-9.]+)", prop_js.read_text())
         if m:
             return float(m.group(1))
     except OSError:
         pass
-    print('  ! could not read maxUnsupportedSpan from web/prop.js; using 12.0')
+    print("  ! could not read maxUnsupportedSpan from web/prop.js; using 12.0")
     return 12.0
 
-MAX_UNSUPPORTED_SPAN = _span_from_generator()   # mm; the dial M7b exposes
+
+MAX_UNSUPPORTED_SPAN = _span_from_generator()  # mm; the dial M7b exposes
 
 
 def _baseh_from_generator():
-    import re, pathlib
-    prop_js = pathlib.Path(__file__).resolve().parent.parent / 'web' / 'prop.js'
+    import re
+    import pathlib
+
+    prop_js = pathlib.Path(__file__).resolve().parent.parent / "web" / "prop.js"
     try:
-        m = re.search(r'baseH:\s*([0-9.]+)', prop_js.read_text())
+        m = re.search(r"baseH:\s*([0-9.]+)", prop_js.read_text())
         if m:
             return float(m.group(1))
     except OSError:
         pass
-    print('  ! could not read baseH from web/prop.js; using 1.0')
+    print("  ! could not read baseH from web/prop.js; using 1.0")
     return 1.0
 
 
@@ -119,7 +129,7 @@ def coverage(case, added):
 
 
 def bodies_of(path):
-    m = trimesh.load(path, force='mesh')
+    m = trimesh.load(path, force="mesh")
     if len(m.faces) == 0:
         return None, []
     return m, m.split(only_watertight=False)
@@ -136,17 +146,18 @@ def part_of(case):
     defect in the wall's height fitting.
     """
     try:
-        return trimesh.load(f'{case}-part.stl', force='mesh')
+        return trimesh.load(f"{case}-part.stl", force="mesh")
     except Exception:
-        full = trimesh.load(f'{case}.stl', force='mesh')
-        print(f'  ! {case.split("/")[-1]}: no -part.stl, falling back to the '
-              f'largest body (wrong for multi-body parts)')
-        return sorted(full.split(only_watertight=False),
-                      key=lambda b: -len(b.faces))[0]
+        full = trimesh.load(f"{case}.stl", force="mesh")
+        print(
+            f"  ! {case.split('/')[-1]}: no -part.stl, falling back to the "
+            f"largest body (wrong for multi-body parts)"
+        )
+        return sorted(full.split(only_watertight=False), key=lambda b: -len(b.faces))[0]
 
 
 def check(case):
-    fins_path = f'{case}-fins.stl'
+    fins_path = f"{case}-fins.stl"
     m, added = bodies_of(fins_path)
     if m is None:
         # NOT a pass. This used to `return True`, so a case where the tool built
@@ -156,8 +167,10 @@ def check(case):
         # An empty result is a coverage failure; it is only not a CORRECTNESS
         # failure, so it gets its own bucket rather than being folded into either.
         cov, tot = coverage(case, [])
-        print(f'{case.split("/")[-1]:28} EMPTY -- nothing built'
-              f'{"":42}  cov   0%  of {tot:6.0f} mm2')
+        print(
+            f"{case.split('/')[-1]:28} EMPTY -- nothing built"
+            f"{'':42}  cov   0%  of {tot:6.0f} mm2"
+        )
         return None, (0.0 if cov is not None else None), tot
 
     part = part_of(case)
@@ -181,14 +194,14 @@ def check(case):
 
     bad = [b for b in added if not (b.is_watertight and b.is_volume)]
     if bad:
-        problems.append(f'{len(bad)} solids not watertight/volume')
+        problems.append(f"{len(bad)} solids not watertight/volume")
 
     # walls and bases must stay out of the part
     inside = 0
     for b in walls:
         inside += int((pq.signed_distance(b.vertices) > 1e-3).sum())
     if inside:
-        problems.append(f'{inside} wall/base verts inside part')
+        problems.append(f"{inside} wall/base verts inside part")
 
     # every tine must bite the part AND be joined to a wall
     no_bite = no_grip = 0
@@ -196,12 +209,15 @@ def check(case):
     for t in tines:
         if (pq.signed_distance(t.vertices) > 0).sum() == 0:
             no_bite += 1
-        if wall_q and min(abs(q.signed_distance(t.vertices)).min() for q in wall_q) > 0.5:
+        if (
+            wall_q
+            and min(abs(q.signed_distance(t.vertices)).min() for q in wall_q) > 0.5
+        ):
             no_grip += 1
     if no_bite:
-        problems.append(f'{no_bite} tines fuse nothing')
+        problems.append(f"{no_bite} tines fuse nothing")
     if no_grip:
-        problems.append(f'{no_grip} tines detached from wall')
+        problems.append(f"{no_grip} tines detached from wall")
 
     # The standoff is the wall's CLOSEST approach to the part, sampled over its
     # surface. Not the median: a wall whose face is only partly covered by its
@@ -222,18 +238,20 @@ def check(case):
         d = pq.signed_distance(pts)
         if len(d):
             gaps.append(float(np.abs(d).min()))
-    gap_txt = ', '.join(f'{g:.3f}' for g in gaps) if gaps else 'n/a'
+    gap_txt = ", ".join(f"{g:.3f}" for g in gaps) if gaps else "n/a"
     if gaps and any(abs(g - STANDOFF) > 0.05 for g in gaps):
-        problems.append(f'standoff off spec ({gap_txt})')
+        problems.append(f"standoff off spec ({gap_txt})")
     if flanks and min(flanks) < FLANK_MIN:
-        problems.append(f'flange {min(flanks):.3f} < {FLANK_MIN} (would weld)')
+        problems.append(f"flange {min(flanks):.3f} < {FLANK_MIN} (would weld)")
 
     ok = not problems
     cov, tot = coverage(case, added)
-    print(f'{case.split("/")[-1]:28} {len(added):4} solids  {len(walls)-len(gaps)}+{len(gaps)} wall/base'
-          f'  {len(tines):4} tines  standoff {gap_txt:14}'
-          f'  cov {0 if cov is None else cov:3.0f}%  of {tot:6.0f} mm2'
-          f'  {"OK" if ok else "FAIL: " + "; ".join(problems)}')
+    print(
+        f"{case.split('/')[-1]:28} {len(added):4} solids  {len(walls) - len(gaps)}+{len(gaps)} wall/base"
+        f"  {len(tines):4} tines  standoff {gap_txt:14}"
+        f"  cov {0 if cov is None else cov:3.0f}%  of {tot:6.0f} mm2"
+        f"  {'OK' if ok else 'FAIL: ' + '; '.join(problems)}"
+    )
     return ok, cov, tot
 
 
@@ -258,7 +276,7 @@ def check_props(case, added, part, pq):
     problems = []
     bad = [b for b in added if not (b.is_watertight and b.is_volume)]
     if bad:
-        problems.append(f'{len(bad)} solids not watertight/volume')
+        problems.append(f"{len(bad)} solids not watertight/volume")
 
     inside = 0
     nwall = 0
@@ -275,34 +293,41 @@ def check_props(case, added, part, pq):
         nwall += 1
         vec = close - pts
         norm = np.linalg.norm(vec, axis=1)
-        with np.errstate(invalid='ignore', divide='ignore'):
+        with np.errstate(invalid="ignore", divide="ignore"):
             above = np.where(norm > 1e-9, vec[:, 2] / norm, 0.0) > 0.7
         if above.any():
             tops.append(float(dist[above].min()))
         if (~above).any():
             flanks.append(float(dist[~above].min()))
     if inside:
-        problems.append(f'{inside} prop verts inside part (must not fuse)')
+        problems.append(f"{inside} prop verts inside part (must not fuse)")
 
-    gap_txt = ', '.join(f'{g:.3f}' for g in tops) if tops else 'n/a'
+    gap_txt = ", ".join(f"{g:.3f}" for g in tops) if tops else "n/a"
     if tops and any(abs(g - STANDOFF) > 0.06 for g in tops):
-        problems.append(f'breakaway gap off spec ({gap_txt})')
+        problems.append(f"breakaway gap off spec ({gap_txt})")
     if flanks and min(flanks) < FLANK_MIN:
-        problems.append(f'flank {min(flanks):.3f} < {FLANK_MIN} (would weld)')
+        problems.append(f"flank {min(flanks):.3f} < {FLANK_MIN} (would weld)")
 
     ok = not problems
     cov, tot = coverage(case, added)
-    print(f'{case.split("/")[-1]:28} {len(added):4} solids  {nwall} props'
-          f'  {"":16} gap {gap_txt:14}'
-          f'  cov {0 if cov is None else cov:3.0f}%  of {tot:6.0f} mm2'
-          f'  {"OK" if ok else "FAIL: " + "; ".join(problems)}')
+    print(
+        f"{case.split('/')[-1]:28} {len(added):4} solids  {nwall} props"
+        f"  {'':16} gap {gap_txt:14}"
+        f"  cov {0 if cov is None else cov:3.0f}%  of {tot:6.0f} mm2"
+        f"  {'OK' if ok else 'FAIL: ' + '; '.join(problems)}"
+    )
     return ok, cov, tot
 
 
 def main(paths):
-    cases = sorted({p[:-4] for p in paths
-                    if p.endswith('.stl')
-                    and not p.endswith(('-fins.stl', '-pad.stl', '-part.stl'))})
+    cases = sorted(
+        {
+            p[:-4]
+            for p in paths
+            if p.endswith(".stl")
+            and not p.endswith(("-fins.stl", "-pad.stl", "-part.stl"))
+        }
+    )
     results = [check(c) for c in cases]
     built = [r for r in results if r[0] is not None]
     empty = len(results) - len(built)
@@ -312,13 +337,17 @@ def main(paths):
     # a handful of small ones that happen to be easy.
     tot = sum(r[2] for r in results)
     got = sum((r[1] or 0.0) / 100.0 * r[2] for r in results)
-    print(f'\n{clean}/{len(results)} cases produced a clean support'
-          f'  ({len(built) - clean} built but failed, {empty} built nothing)')
-    print(f'overhang coverage: {100 * got / tot if tot else 0:.0f}% of {tot:.0f} mm2'
-          f'  (within {MAX_UNSUPPORTED_SPAN:.0f} mm of a support)')
+    print(
+        f"\n{clean}/{len(results)} cases produced a clean support"
+        f"  ({len(built) - clean} built but failed, {empty} built nothing)"
+    )
+    print(
+        f"overhang coverage: {100 * got / tot if tot else 0:.0f}% of {tot:.0f} mm2"
+        f"  (within {MAX_UNSUPPORTED_SPAN:.0f} mm of a support)"
+    )
     return 0 if clean == len(results) else 1
 
 
-if __name__ == '__main__':
-    args = sys.argv[1:] or glob.glob('/tmp/sf-*.stl')
+if __name__ == "__main__":
+    args = sys.argv[1:] or glob.glob("/tmp/sf-*.stl")
     sys.exit(main(args))

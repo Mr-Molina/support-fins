@@ -93,7 +93,11 @@ export function stepObjects(result) {
       const idx = result.meshes[i].index.array;
       for (let t = 0; t < idx.length; t++) {
         const v = idx[t] * 3;
-        positions[o++] = p[v]; positions[o++] = p[v + 1]; positions[o++] = p[v + 2];
+        if (Number.isFinite(p[v])) {
+          positions[o++] = p[v]; positions[o++] = p[v + 1]; positions[o++] = p[v + 2];
+        } else {
+          positions[o++] = 0; positions[o++] = 0; positions[o++] = 0;
+        }
       }
     }
     objects.push({

@@ -36,7 +36,12 @@ if (typeof Option !== 'undefined' && volumeSelect?.add) {
 let volume = { ...DEFAULT_VOLUME };
 try {
   const saved = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem(VOLUME_STORE) || 'null') : null;
-  if (saved && saved.x > 0 && saved.y > 0 && saved.z > 0) volume = saved;
+  if (saved) {
+    const x = Number(saved.x), y = Number(saved.y), z = Number(saved.z);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && x > 0 && y > 0 && z > 0) {
+      volume = { x, y, z };
+    }
+  }
 } catch { /* corrupt or unavailable storage is not worth failing over */ }
 
 const isPreset = (v) => VOLUMES.some((p) => volLabel(p) === volLabel(v));

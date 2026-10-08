@@ -122,83 +122,92 @@ const SHADE = {
  * z=0. Returns the measured size so the caller can report it.
  */
 export function setPart(geometry, filename) {
-  const pos = geometry?.getAttribute?.('position');
-  if (!pos || pos.count < 3) throw new Error('Cannot load empty or corrupted mesh geometry.');
+  try {
+    const pos = geometry?.getAttribute?.('position');
+    if (!pos || pos.count < 3) throw new Error('Cannot load empty or corrupted mesh geometry.');
 
-  if (part) {
-    part.geometry.dispose();
-    scene.remove(part);
+    if (part) {
+      part.geometry.dispose();
+      scene.remove(part);
+    }
+    geometry.computeBoundingBox();
+    const bb = geometry.boundingBox;
+    // Centre the geometry on its own origin in ALL THREE axes, so the part rotates
+    // about its middle and the gizmo sits there rather than at its feet. Seating on
+    // the plate is not this transform's job -- analyze() returns the offset for that
+    // after the rotation is known.
+    geometry.translate(
+      -(bb.min.x + bb.max.x) / 2,
+      -(bb.min.y + bb.max.y) / 2,
+      -(bb.min.z + bb.max.z) / 2);
+    // Always recompute shading normals from the winding -- never trust the STL's
+    // stored normals. A binary STL carries a per-face normal that STLLoader loads
+    // into a `normal` attribute, and exporters routinely write those as zero or
+    // garbage (the same reason buildTopology derives its own). A zero normal lights
+    // as pure black, so trusting the stored one renders the whole part invisible.
+    // Dropping the attribute first forces computeVertexNormals to rebuild it.
+    geometry.deleteAttribute('normal');
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+
+    part = new THREE.Mesh(geometry, partMaterial);
+    part.add(hoverFace);
+    hoverFace.visible = false;
+    scene.add(part);
+
+    const nFaces = geometry.getAttribute('position').count / 3;
+    geometry.setAttribute(
+      'color', new THREE.Float32BufferAttribute(new Float32Array(nFaces * 9), 3));
+
+    const tWeld = performance.now();
+    topology = buildTopology(geometry);
+    weldMs = performance.now() - tWeld;
+    computeFlatBaseline();
+
+    partName = filename;
+    part.quaternion.identity();
+    gizmo.attach(part);
+    el('orient').hidden = false;
+
+    // A new part starts with no hand-drawn walls and a fresh print-space cache.
+    drawnWalls = [];
+    if (drawnMesh) { scene.remove(drawnMesh); drawnMesh.geometry.dispose(); drawnMesh = null; }
+    if (selMesh) { scene.remove(selMesh); selMesh.geometry.dispose(); selMesh = null; }
+    selectedWall = null;
+    drawnTris = [];
+    syncSelection();
+    // Per-fin removals are keyed by a content signature that can coincidentally
+    // match a different model's fins, so they must NOT carry across parts -- clear
+    // them here alongside the walls, or loading a new STL silently drops fins.
+    resetRemovals();
+    // Nor does an armed remove mode: it hides the rotate rings and turns every click
+    // on the new part into a fin pick, so the part looked stuck until Esc.
+    if (removeMode) cancelRemove();
+    drawAugment = false;
+    drawMsg = '';
+    printTrisDirty = true;
+    clearPreview();
+    // A new part starts with no load direction either.
+    resetLoad();
+    layPlacing = false;
+    controls.enabled = true;
+    syncLoadUI();
+    setGizmo();
+
+    // Undo history does not carry across parts.
+    resetHistory();
+
+    const size = shade();
+    frame(size);
+    return size;
+  } catch (err) {
+    console.error('setPart failed:', err);
+    const statusEl = document.getElementById('s-import-note');
+    if (statusEl) statusEl.textContent = `Failed to load part: ${err.message}`;
+    const statusCard = document.getElementById('status');
+    if (statusCard) statusCard.hidden = false;
+    return null;
   }
-  geometry.computeBoundingBox();
-  const bb = geometry.boundingBox;
-  // Centre the geometry on its own origin in ALL THREE axes, so the part rotates
-  // about its middle and the gizmo sits there rather than at its feet. Seating on
-  // the plate is not this transform's job -- analyze() returns the offset for that
-  // after the rotation is known.
-  geometry.translate(
-    -(bb.min.x + bb.max.x) / 2,
-    -(bb.min.y + bb.max.y) / 2,
-    -(bb.min.z + bb.max.z) / 2);
-  // Always recompute shading normals from the winding -- never trust the STL's
-  // stored normals. A binary STL carries a per-face normal that STLLoader loads
-  // into a `normal` attribute, and exporters routinely write those as zero or
-  // garbage (the same reason buildTopology derives its own). A zero normal lights
-  // as pure black, so trusting the stored one renders the whole part invisible.
-  // Dropping the attribute first forces computeVertexNormals to rebuild it.
-  geometry.deleteAttribute('normal');
-  geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
-
-  part = new THREE.Mesh(geometry, partMaterial);
-  part.add(hoverFace);
-  hoverFace.visible = false;
-  scene.add(part);
-
-  const nFaces = geometry.getAttribute('position').count / 3;
-  geometry.setAttribute(
-    'color', new THREE.Float32BufferAttribute(new Float32Array(nFaces * 9), 3));
-
-  const tWeld = performance.now();
-  topology = buildTopology(geometry);
-  weldMs = performance.now() - tWeld;
-  computeFlatBaseline();
-
-  partName = filename;
-  part.quaternion.identity();
-  gizmo.attach(part);
-  el('orient').hidden = false;
-
-  // A new part starts with no hand-drawn walls and a fresh print-space cache.
-  drawnWalls = [];
-  if (drawnMesh) { scene.remove(drawnMesh); drawnMesh.geometry.dispose(); drawnMesh = null; }
-  if (selMesh) { scene.remove(selMesh); selMesh.geometry.dispose(); selMesh = null; }
-  selectedWall = null;
-  drawnTris = [];
-  syncSelection();
-  // Per-fin removals are keyed by a content signature that can coincidentally
-  // match a different model's fins, so they must NOT carry across parts -- clear
-  // them here alongside the walls, or loading a new STL silently drops fins.
-  resetRemovals();
-  // Nor does an armed remove mode: it hides the rotate rings and turns every click
-  // on the new part into a fin pick, so the part looked stuck until Esc.
-  if (removeMode) cancelRemove();
-  drawAugment = false;
-  drawMsg = '';
-  printTrisDirty = true;
-  clearPreview();
-  // A new part starts with no load direction either.
-  resetLoad();
-  layPlacing = false;
-  controls.enabled = true;
-  syncLoadUI();
-  setGizmo();
-
-  // Undo history does not carry across parts.
-  resetHistory();
-
-  const size = shade();
-  frame(size);
-  return size;
 }
 
 /**
@@ -903,7 +912,15 @@ function makeFinWorker() {
   };
   // A worker-level error must not leave the UI wedged (spinner up, fins greyed):
   // drop to inline for next time and release the in-flight state now.
-  w.onerror = () => { finWorker = null; finBusy = false; clearSpinner(); };
+  w.onerror = () => {
+    finWorker = null;
+    finBusy = false;
+    clearSpinner();
+    finMaterial.transparent = padMaterial.transparent = drawMaterial.transparent = false;
+    finMaterial.opacity = padMaterial.opacity = drawMaterial.opacity = 1.0;
+    for (const m of [finMesh, padMesh, drawnMesh]) if (m) m.material.opacity = 1.0;
+    el('s-fins').textContent = '';
+  };
   return w;
 }
 
@@ -1344,6 +1361,8 @@ addEventListener('keydown', (e) => {
 function rotate90(name, axis) {
   if (!part) return;
   histPush();
+  drawnWalls = [];
+  resetRemovals();
   const q = new THREE.Quaternion().setFromAxisAngle(axis, Math.PI / 2);
   part.quaternion.premultiply(q);   // premultiply = about the WORLD axis
   showDelta(name.toUpperCase(), Math.PI / 2);
@@ -1390,10 +1409,17 @@ function pickFace(ev) {
 }
 
 let pickMovePending = null;
+let rafQueued = false;
 if (renderer?.domElement) {
   renderer.domElement.addEventListener('pointermove', (ev) => {
     pickMovePending = ev;
-    requestAnimationFrame(processPointerMove);
+    if (!rafQueued) {
+      rafQueued = true;
+      requestAnimationFrame(() => {
+        rafQueued = false;
+        processPointerMove();
+      });
+    }
   });
 }
 
@@ -1522,6 +1548,8 @@ if (renderer?.domElement) {
     part.quaternion.premultiply(layQuat);
     clearSuggestionMark();
     cancelLay();            // one-shot: disarm after a lay so the next click is safe
+    drawnWalls = [];
+    resetRemovals();
     shade();
   });
 }
@@ -1620,6 +1648,9 @@ const wanted = typeof location !== 'undefined' ? new URLSearchParams(location.se
 if (wanted) {
   loadURL(wanted).catch((err) => {
     console.error('?stl=', err);
-    alert(`Failed to load ${wanted}:\n${err.message}`);
+    const statusEl = document.getElementById('s-import-note');
+    if (statusEl) statusEl.textContent = `Failed to load ${wanted}: ${err.message}`;
+    const statusCard = document.getElementById('status');
+    if (statusCard) statusCard.hidden = false;
   });
 }

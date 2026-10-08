@@ -18,6 +18,7 @@
  * being called validated. A slicer would read it as a hole rather than a wall.
  */
 export function ribbon(secs, out) {
+  if (!secs || secs.length < 2 || !secs[0]) return;
   const k = secs[0].length;
   const tri = (a, b, c) => out.push(a, c, b);
   for (let i = 0; i < secs.length - 1; i++) {
@@ -42,6 +43,7 @@ export function ribbon(secs, out) {
  * caller below guarantees by construction.
  */
 export function boxExtrude(poly, lo, hi, P, out) {
+  if (!poly || poly.length < 3) return;
   const n = poly.length;
   const vlo = poly.map(([a, b]) => P(a, b, lo));
   const vhi = poly.map(([a, b]) => P(a, b, hi));

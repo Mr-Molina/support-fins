@@ -114,6 +114,7 @@ export const removeActive = () => finsVisible && finMode === 'auto' && removeMod
 function pickFin(ev) {
   if (!finMesh) return null;
   const r = renderer.domElement.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return null;
   pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1,
               -((ev.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
@@ -221,6 +222,7 @@ export function resetRemovals() {
 /** Undo/redo: put back a snapshot's removals, disarmed. */
 export function restoreRemovals(sigs) {
   removedSigs = new Set(sigs ?? []);
+  removedIds = new Set(finRecords.filter((r) => removedSigs.has(r.sig)).map((r) => r.id));
   removeMode = false;
 }
 

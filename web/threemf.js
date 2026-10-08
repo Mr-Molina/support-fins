@@ -408,6 +408,10 @@ function emitObject(getPart, path, id, m, out, seen, stats) {
   }
   if (tris.length) stats.meshes++;
 
+  if (out.length > 30000000) {
+    throw new Error('Total emitted vertices exceeded limit (DAG expansion)');
+  }
+
   for (const c of obj.components) {
     const childPath = c.path ? partName(c.path) : path;
     emitObject(getPart, childPath, c.objectid, compose(c.transform, m), out, seen, stats);
@@ -426,6 +430,14 @@ const bbox = (positions) => {
   return { lo, hi, size: hi.map((h, k) => h - lo[k]) };
 };
 
+function decodeText(data) {
+  try {
+    return new TextDecoder().decode(data);
+  } catch (e) {
+    throw new Error('XML part too large to decode safely');
+  }
+}
+
 /** Locate the root 3dmodel.model part name (the one carrying <build>). */
 function findRootPart(parts) {
   if (parts.has('3D/3dmodel.model')) return '3D/3dmodel.model';
@@ -433,7 +445,7 @@ function findRootPart(parts) {
   const rels = parts.get('_rels/.rels');
   if (rels) {
     let target = null;
-    scanXML(new TextDecoder().decode(rels), (tag, a) => {
+    scanXML(decodeText(rels), (tag, a) => {
       if (local(tag) === 'Relationship' && a.Type === REL_3DMODEL && a.Target) target = a.Target;
     }, () => {});
     if (target && parts.has(partName(target))) return partName(target);
@@ -444,7 +456,7 @@ function findRootPart(parts) {
   for (const [name] of parts) {
     if (!name.toLowerCase().endsWith('.model')) continue;
     if (first === null) first = name;
-    if (/<\s*build[\s>]/.test(new TextDecoder().decode(parts.get(name)))) return name;
+    if (/<\s*build[\s>]/.test(decodeText(parts.get(name)))) return name;
   }
   return first;
 }
@@ -474,7 +486,7 @@ export async function readThreeMF(bytes) {
   const getPart = (name) => {
     if (parsed.has(name)) return parsed.get(name);
     const data = parts.get(name);
-    const p = data ? parseModelXML(new TextDecoder().decode(data)) : null;
+    const p = data ? parseModelXML(decodeText(data)) : null;
     parsed.set(name, p);
     return p;
   };
@@ -483,7 +495,7 @@ export async function readThreeMF(bytes) {
   const unit = root.unit;
   const scale = UNIT_MM[unit] ?? 1;
   const names = parseObjectNames(parts.has('Metadata/model_settings.config')
-    ? new TextDecoder().decode(parts.get('Metadata/model_settings.config')) : null);
+    ? decodeText(parts.get('Metadata/model_settings.config')) : null);
 
   // Each <build><item> is one pickable object. No <build> is a valid-but-empty
   // plate; a few CAD exporters omit it, so fall back to the mesh/assembly objects

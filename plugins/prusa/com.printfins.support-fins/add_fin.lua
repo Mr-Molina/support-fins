@@ -26,6 +26,7 @@ info = {
     type = "project.plugin",
     title = "Add a Fin",
     menu = "Support Fins/Add a Fin",
+    min_slicer_version = "2.7.0",
     params = {
         {name = "fin_height",     label = "Fin Height [mm]",  type = "float", default = 25},
         {name = "length",         label = "Fin Length [mm]",  type = "float", default = 15},

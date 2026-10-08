@@ -10,6 +10,7 @@ the OLD code, which looks exactly like a logic bug and wastes an afternoon.
     python3 dev-server.py [port]            # http://localhost:8731/
     python3 dev-server.py --host 0.0.0.0    # reach from other devices on the LAN
 """
+
 import argparse
 import functools
 import http.server
@@ -20,19 +21,19 @@ import sys
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
-        self.send_header('Cache-Control', 'no-store, must-revalidate')
-        self.send_header('Pragma', 'no-cache')
-        self.send_header('Expires', '0')
+        self.send_header("Cache-Control", "no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         super().end_headers()
 
     def list_directory(self, path):
         self.send_error(404, "Directory listing disabled")
         return None
 
-    def log_message(self, fmt, *args):        # one line per request, no noise
-        code = args[1] if len(args) > 1 else '-'
-        cmd = str(self.command).replace('\r', '').replace('\n', '')
-        path = str(self.path).replace('\r', '').replace('\n', '')
+    def log_message(self, fmt, *args):  # one line per request, no noise
+        code = args[1] if len(args) > 1 else "-"
+        cmd = str(self.command).replace("\r", "").replace("\n", "").replace("\x1b", "")
+        path = str(self.path).replace("\r", "").replace("\n", "").replace("\x1b", "")
         sys.stderr.write(f"{cmd} {path} -> {code}\n")
 
 
@@ -40,7 +41,9 @@ def _lan_ip():
     """Best-effort LAN address for the "reachable at" hint. No packets are sent."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))  # pick a route; the OS resolves the local end without sending
+        s.connect(
+            ("8.8.8.8", 80)
+        )  # pick a route; the OS resolves the local end without sending
         ip = s.getsockname()[0]
         s.close()
         return ip
@@ -50,29 +53,39 @@ def _lan_ip():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Support Fins no-cache dev server.',
-        epilog='Bind 0.0.0.0 (or ::) to reach the server from other devices on your LAN.',
+        description="Support Fins no-cache dev server.",
+        epilog="Bind 0.0.0.0 (or ::) to reach the server from other devices on your LAN.",
     )
-    parser.add_argument('port', nargs='?', type=int, default=8731,
-                        help='port to listen on (default: 8731)')
-    parser.add_argument('--host', default='127.0.0.1',
-                        help='address to bind (default: 127.0.0.1; 0.0.0.0 exposes it to the LAN)')
+    parser.add_argument(
+        "port",
+        nargs="?",
+        type=int,
+        default=8731,
+        help="port to listen on (default: 8731)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="address to bind (default: 127.0.0.1; 0.0.0.0 exposes it to the LAN)",
+    )
     args = parser.parse_args()
 
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')  # serve ./web from the repo root
+    root = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "web"
+    )  # serve ./web from the repo root
     handler = functools.partial(NoCacheHandler, directory=root)
     print(f"support-fins dev server: http://localhost:{args.port}/  (serving {root})")
-    wildcard = args.host in ('0.0.0.0', '::', '')
+    wildcard = args.host in ("0.0.0.0", "::", "")
     if wildcard:
         ip = _lan_ip()
         if ip:
             print(f"On other devices on your LAN, open http://{ip}:{args.port}/")
-    bind = '' if wildcard else args.host
+    bind = "" if wildcard else args.host
     sys.stdout.flush()  # ensure the lines above land in a redirected log immediately (e.g. headless RPi)
     server = http.server.ThreadingHTTPServer((bind, args.port), handler)
     server.timeout = 10
     server.serve_forever()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

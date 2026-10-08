@@ -48,28 +48,30 @@ Constants are copied from prototype/spike_overhangs.py CONSTANT-FOR-CONSTANT so
 the in-Orca numbers match the website and the Python probes on the same file. If
 one changes, change it in both places.
 """
+
 import math
 
 import orca
 import numpy as np
 
 OVERHANG_DEG = 45.0
-OVERHANG_COS = math.cos(math.radians(OVERHANG_DEG))   # 0.70710678..., NOT 0.7071
+OVERHANG_COS = math.cos(math.radians(OVERHANG_DEG))  # 0.70710678..., NOT 0.7071
 # A face at EXACTLY the threshold is self-supporting; 45 deg is the canonical
 # designed-in chamfer angle, so real parts carry thousands of faces on this exact
 # boundary and the comparison must not decide them by float noise. See the long
 # note in spike_overhangs.py: the old truncated 0.7071 pulled every 45 deg chamfer
 # in (on one Voron part, a 2.1x overstatement of overhang area).
-ANGLE_EPS = 1e-4                                      # ~0.008 deg of slack
-OVERHANG_CUT = -(OVERHANG_COS + ANGLE_EPS)            # test: n_z < OVERHANG_CUT
-MIN_REGION_AREA = 12.0        # mm^2; ignore slivers (a fin on a sliver is noise)
-BED_EPS = 0.35                # mm; a face this close to the plate IS the bottom
+ANGLE_EPS = 1e-4  # ~0.008 deg of slack
+OVERHANG_CUT = -(OVERHANG_COS + ANGLE_EPS)  # test: n_z < OVERHANG_CUT
+MIN_REGION_AREA = 12.0  # mm^2; ignore slivers (a fin on a sliver is noise)
+BED_EPS = 0.35  # mm; a face this close to the plate IS the bottom
 
 
 def _probe_trimesh():
     """Report whether the fuller fin steps can lean on trimesh in this interpreter."""
     try:
         import trimesh  # noqa: F401
+
         return f"trimesh {getattr(trimesh, '__version__', '?')} available"
     except Exception as e:  # ImportError, or a broken partial install
         return f"trimesh NOT available ({type(e).__name__}) -- port must reimplement its calls"
@@ -94,10 +96,10 @@ def _analyse_mesh(V, T):
     # Seat the part on the plate (min z -> 0), same as the website's print space.
     V = V - [0.0, 0.0, V[:, 2].min()]
 
-    tris = V[T]                       # (M,3,3): per-face vertex coords
+    tris = V[T]  # (M,3,3): per-face vertex coords
     e1 = tris[:, 1] - tris[:, 0]
     e2 = tris[:, 2] - tris[:, 0]
-    cross = np.cross(e1, e2)          # face normal * 2*area, winding-consistent
+    cross = np.cross(e1, e2)  # face normal * 2*area, winding-consistent
     areas = 0.5 * np.linalg.norm(cross, axis=1)
     norm = np.linalg.norm(cross, axis=1)
     nz = np.divide(cross[:, 2], norm, out=np.zeros_like(norm), where=norm > 1e-12)
@@ -138,12 +140,14 @@ class SupportFinsProbe(orca.script.ScriptPluginCapabilityBase):
             # failure() takes an orca.PluginResult, not a string -- a string raises TypeError
             return orca.ExecutionResult.failure(
                 orca.PluginResult.RecoverableError,
-                f"orca.host.model() raised {type(e).__name__}: {e}")
+                f"orca.host.model() raised {type(e).__name__}: {e}",
+            )
 
         objs = list(model.objects())
         if not objs:
             return orca.ExecutionResult.skipped(
-                "No objects on the plate. Load a model, then run the probe.")
+                "No objects on the plate. Load a model, then run the probe."
+            )
 
         any_overhang = False
         for oi, obj in enumerate(objs):
@@ -159,8 +163,9 @@ class SupportFinsProbe(orca.script.ScriptPluginCapabilityBase):
                     V = np.asarray(mesh.vertices(), dtype=np.float64)
                     T = np.asarray(mesh.triangles(), dtype=np.int64)
                 except Exception as e:
-                    lines.append(f"  vol {vi}: mesh read FAILED "
-                                 f"({type(e).__name__}: {e})")
+                    lines.append(
+                        f"  vol {vi}: mesh read FAILED ({type(e).__name__}: {e})"
+                    )
                     continue
                 try:
                     vol_m = np.asarray(vol.matrix(), dtype=np.float64)
@@ -180,14 +185,21 @@ class SupportFinsProbe(orca.script.ScriptPluginCapabilityBase):
                 lines.append(
                     f"  vol {vi}: {r['faces']:,} faces, bbox {r['bbox']} mm -> "
                     f"{r['overhang_faces']:,} overhang faces, "
-                    f"{r['overhang_area']} mm^2 ({r['overhang_pct']}%) -> {flag}")
+                    f"{r['overhang_area']} mm^2 ({r['overhang_pct']}%) -> {flag}"
+                )
 
         lines.append("")
-        lines.append("Read + overhang math ran inside Orca — the printfins.com "
-                     "analysis half is portable." if True else "")
-        lines.append("NOTE: placing fins on the plate is NOT possible via the Orca "
-                     "plugin API (host is read-only). Next phase writes a finned "
-                     ".3mf for File > Import.")
+        lines.append(
+            "Read + overhang math ran inside Orca — the printfins.com "
+            "analysis half is portable."
+            if True
+            else ""
+        )
+        lines.append(
+            "NOTE: placing fins on the plate is NOT possible via the Orca "
+            "plugin API (host is read-only). Next phase writes a finned "
+            ".3mf for File > Import."
+        )
 
         msg = "\n".join(lines)
         # Surface the report in the result dialog AND stdout (Orca log) so it's

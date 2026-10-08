@@ -25,6 +25,7 @@ local M = {}
 --@return table mesh plus x/y/z, ready for builder:add
 function M.cylinder_at(radius, height, cx, cy, z0)
     local mesh = api.make_cylinder(radius, height)
+    if not mesh then return nil end
     local b = mesh:bounds()
     return {
         mesh = mesh,
@@ -63,6 +64,7 @@ end
 -- relative to it, which keeps all the arithmetic above in one flat space.
 function Builder:emit(pos, object_params)
     pos = pos or {}
+    if #self.volumes == 0 then return end
     local first = self.volumes[1]
     local others = {}
 

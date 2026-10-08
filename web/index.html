@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'none'; frame-ancestors 'none';">
 <title>Support Fins</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
@@ -46,9 +47,9 @@
     <output id="thr-val">45°</output>
   </label>
   <span class="spacer"></span>
-  <button class="btn" id="fins-toggle">Add fins</button>
-  <button class="btn" id="export">Export STL</button>
-  <button class="btn" id="export-3mf" title="Opens oriented and support-free in Bambu Studio, OrcaSlicer, or PrusaSlicer. Bambu/PrusaSlicer may note 'no config, geometry only' — expected; the part still comes in correct.">Export 3MF</button>
+  <button type="button" class="btn" id="fins-toggle" aria-expanded="false" aria-controls="fin-opts">Add fins</button>
+  <button type="button" class="btn" id="export">Export STL</button>
+  <button type="button" class="btn" id="export-3mf" title="Opens oriented and support-free in Bambu Studio, OrcaSlicer, or PrusaSlicer. Bambu/PrusaSlicer may note 'no config, geometry only' — expected; the part still comes in correct.">Export 3MF</button>
   <a class="btn gh" href="https://github.com/gittrahan/support-fins" target="_blank" rel="noopener"
      title="Source code on GitHub. Runs entirely in your browser; no file ever leaves your machine."
      aria-label="Support Fins on GitHub"><svg viewBox="0 0 16 16" width="16" height="16"
@@ -84,15 +85,15 @@
 
 <aside id="orient" hidden>
   <span class="lbl">Rotate 90°</span>
-  <button class="btn sm" id="rot-x" aria-label="Rotate 90 degrees about X">X</button>
-  <button class="btn sm" id="rot-y" aria-label="Rotate 90 degrees about Y">Y</button>
-  <button class="btn sm" id="rot-z" aria-label="Rotate 90 degrees about Z">Z</button>
-  <button class="btn sm" id="rot-reset">Reset</button>
-  <button class="btn sm" id="undo" title="Undo (⌘/Ctrl+Z)" disabled>Undo</button>
-  <button class="btn sm" id="redo" title="Redo (⇧⌘/Ctrl+Shift+Z)" disabled>Redo</button>
+  <button type="button" class="btn sm" id="rot-x" aria-label="Rotate 90 degrees about X">X</button>
+  <button type="button" class="btn sm" id="rot-y" aria-label="Rotate 90 degrees about Y">Y</button>
+  <button type="button" class="btn sm" id="rot-z" aria-label="Rotate 90 degrees about Z">Z</button>
+  <button type="button" class="btn sm" id="rot-reset">Reset</button>
+  <button type="button" class="btn sm" id="undo" title="Undo (⌘/Ctrl+Z)" disabled>Undo</button>
+  <button type="button" class="btn sm" id="redo" title="Redo (⇧⌘/Ctrl+Shift+Z)" disabled>Redo</button>
   <p class="readout"><span id="rot-now">X 0° · Y 0° · Z 0°</span><span id="rot-delta"></span></p>
   <p class="hint">Drag the rings to turn it, or:</p>
-  <button class="btn sm" id="lay-face"
+  <button type="button" class="btn sm" id="lay-face"
           title="Click this, then click a face to set it flat on the bed. Off by default so a stray click can't re-lay the part.">Lay a face flat</button>
   <!-- Automatic strength view: no input. The faint frames show how the print is
        layered (they stay horizontal while the part turns inside them), and the note
@@ -105,8 +106,8 @@
   </div>
   <div class="suggest">
     <div class="suggest-head">
-      <button class="btn sm" id="suggest-orient">Suggest orientation</button>
-      <button class="disclosure" id="suggest-toggle" hidden aria-expanded="true"
+      <button type="button" class="btn sm" id="suggest-orient">Suggest orientation</button>
+      <button type="button" class="disclosure" id="suggest-toggle" hidden aria-expanded="true" aria-controls="suggest-body"
               aria-label="Collapse suggestions" title="Collapse">&rsaquo;</button>
     </div>
     <div id="suggest-body">
@@ -124,23 +125,23 @@
   <div class="loadfx">
     <p class="loadfx-lede"><strong>Strength arrow</strong>: which way is it loaded?</p>
     <div class="load-mode-group" role="group" aria-label="Load type">
-      <button class="btn sm active" id="load-mode-pull"  aria-pressed="true"  title="Load pulls directly along the arrow (pure tension)">Pull (tension)</button>
-      <button class="btn sm"        id="load-mode-lever" aria-pressed="false" title="Load bends or levers the feature (bending/shear)">Lever (bending)</button>
+      <button type="button" class="btn sm active" id="load-mode-pull"  aria-pressed="true"  title="Load pulls directly along the arrow (pure tension)">Pull (tension)</button>
+      <button type="button" class="btn sm"        id="load-mode-lever" aria-pressed="false" title="Load bends or levers the feature (bending/shear)">Lever (bending)</button>
     </div>
     <div class="strength-pad" role="group" aria-label="Load direction">
-      <button class="btn sm" id="load-upleft"    aria-label="Load points up and left">↖</button>
-      <button class="btn sm" id="load-up"        aria-label="Load points up">↑</button>
-      <button class="btn sm" id="load-upright"   aria-label="Load points up and right">↗</button>
-      <button class="btn sm" id="load-left"      aria-label="Load points left">←</button>
+      <button type="button" class="btn sm" id="load-upleft"    aria-label="Load points up and left">↖</button>
+      <button type="button" class="btn sm" id="load-up"        aria-label="Load points up">↑</button>
+      <button type="button" class="btn sm" id="load-upright"   aria-label="Load points up and right">↗</button>
+      <button type="button" class="btn sm" id="load-left"      aria-label="Load points left">←</button>
       <span class="strength-pad-center" aria-hidden="true"></span>
-      <button class="btn sm" id="load-right"     aria-label="Load points right">→</button>
-      <button class="btn sm" id="load-downleft"  aria-label="Load points down and left">↙</button>
-      <button class="btn sm" id="load-down"      aria-label="Load points down">↓</button>
-      <button class="btn sm" id="load-downright" aria-label="Load points down and right">↘</button>
-      <button class="btn sm" id="load-front"     aria-label="Load points toward you">⊙ front</button>
-      <button class="btn sm" id="load-back"      aria-label="Load points away from you">⊗ back</button>
+      <button type="button" class="btn sm" id="load-right"     aria-label="Load points right">→</button>
+      <button type="button" class="btn sm" id="load-downleft"  aria-label="Load points down and left">↙</button>
+      <button type="button" class="btn sm" id="load-down"      aria-label="Load points down">↓</button>
+      <button type="button" class="btn sm" id="load-downright" aria-label="Load points down and right">↘</button>
+      <button type="button" class="btn sm" id="load-front"     aria-label="Load points toward you">⊙ front</button>
+      <button type="button" class="btn sm" id="load-back"      aria-label="Load points away from you">⊗ back</button>
     </div>
-    <button class="btn sm" id="load-clear" hidden>Clear</button>
+    <button type="button" class="btn sm" id="load-clear" hidden>Clear</button>
     <p class="load-verdict" id="load-note" hidden></p>
   </div>
 </aside>
@@ -326,13 +327,13 @@
          Shown only in Suggest mode (toggled in app.js). Per-fin removal (Auto only,
          shown via app.js syncRemoveUI): arm a click-to-remove mode, hover lights a
          fin red, click drops just that one; Restore all brings every one back. -->
-    <button class="btn sm" id="augment-toggle" hidden
+    <button type="button" class="btn sm" id="augment-toggle" hidden
             title="Place extra breakaway walls by hand, on top of the auto-placed ones.">+ Add walls by hand</button>
     <div id="remove-fins-controls" hidden>
       <div class="draw-btns">
-        <button class="btn sm" id="remove-fins-toggle" hidden
+        <button type="button" class="btn sm" id="remove-fins-toggle" hidden
                 title="Click a fin to remove just that one. Esc or right-click cancels.">Remove fins</button>
-        <button class="btn sm" id="restore-fins" hidden
+        <button type="button" class="btn sm" id="restore-fins" hidden
                 title="Bring back every fin removed in this orientation.">Restore all</button>
       </div>
     </div>
@@ -345,10 +346,10 @@
     <p class="draw-hint" id="draw-hint">Click an <strong>overhang face</strong> — it lights
       up green when a fin can go there — to stand a support fin against it.</p>
     <div class="draw-btns">
-      <button class="btn sm" id="draw-remove" hidden
+      <button type="button" class="btn sm" id="draw-remove" hidden
               title="Remove the support you clicked (Delete or Backspace also works).">Remove selected</button>
-      <button class="btn sm" id="draw-undo">Undo</button>
-      <button class="btn sm" id="draw-clear">Clear all</button>
+      <button type="button" class="btn sm" id="draw-undo">Undo</button>
+      <button type="button" class="btn sm" id="draw-clear">Clear all</button>
     </div>
   </div>
 </aside>
@@ -414,8 +415,8 @@
     <div class="picker-foot">
       <span id="picker-hint" class="note"></span>
       <span class="picker-actions">
-        <button class="btn" id="picker-cancel">Cancel</button>
-        <button class="btn primary" id="picker-load">Load</button>
+        <button type="button" class="btn" id="picker-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="picker-load">Load</button>
       </span>
     </div>
   </div>

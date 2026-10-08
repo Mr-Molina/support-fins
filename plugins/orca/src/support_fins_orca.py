@@ -43,6 +43,7 @@ LIMITS (spike)
   * The slicing-pipeline API is marked research/experimental by Orca.
   * One fin set per print object (all instances of an object share it).
 """
+
 import atexit
 import base64
 import json
@@ -56,14 +57,14 @@ try:  # numpy and mini-racer are installed by Orca from the PEP 723 header above
 except ImportError:  # pragma: no cover - surfaced to the user in execute()
     np = None
 
-ENGINE_JS = "__FINS_ENGINE_JS__"   # replaced by build.py with the esbuild bundle
+ENGINE_JS = "__FINS_ENGINE_JS__"  # replaced by build.py with the esbuild bundle
 
 _DEFAULTS = {
     "enabled": True,
-    "apply_to": "no-supports",   # "no-supports" | "all"
-    "coverage": 0.5,             # 0..1, website slider default
+    "apply_to": "no-supports",  # "no-supports" | "all"
+    "coverage": 0.5,  # 0..1, website slider default
     "tines": True,
-    "tine_density": 0.0,         # 0..1, website slider default
+    "tine_density": 0.0,  # 0..1, website slider default
     "bed_pad": True,
 }
 
@@ -86,6 +87,7 @@ def _engine_ctx():
     if _engine is None:
         import sys
         from py_mini_racer import MiniRacer, init_mini_racer
+
         if ENGINE_JS.startswith("__FINS_ENGINE"):
             raise RuntimeError("fin engine bundle missing -- run plugins/orca/build.py")
         flags = ["--single-threaded"]
@@ -127,6 +129,7 @@ def compute_fins(soup, layer_height, cfg):
         "SupportFinsEngine.computeFinsB64",
         base64.b64encode(soup.tobytes()).decode("ascii"),
         json.dumps(opts),
+        timeout=60,
     )
     out = json.loads(raw)
     seated = np.frombuffer(base64.b64decode(out["triangles"]), dtype=np.float32)
@@ -145,6 +148,7 @@ def compute_fins(soup, layer_height, cfg):
 # Orca's own union (ExPolygon.union_ex) merge shells with each other and with the part.
 # Winding is never trusted: outer vs hole comes from nesting depth, and Orca's
 # ExPolygon constructor normalises orientation itself.
+
 
 def _vkey(v, quantum=1e-4):
     return np.round(v / quantum).astype(np.int64)
@@ -213,8 +217,12 @@ def slice_soup(tris, z, quantum=1e-6):
     for p, dk, ab in zip(t, d, above):
         lone = int(np.nonzero(ab if ab.sum() == 1 else ~ab)[0][0])
         a, b = (lone + 1) % 3, (lone + 2) % 3
-        segs.append((_edge_cross(p[lone], p[a], dk[lone], dk[a]),
-                     _edge_cross(p[lone], p[b], dk[lone], dk[b])))
+        segs.append(
+            (
+                _edge_cross(p[lone], p[a], dk[lone], dk[a]),
+                _edge_cross(p[lone], p[b], dk[lone], dk[b]),
+            )
+        )
     return _chain(segs, quantum)
 
 
@@ -225,7 +233,10 @@ def _edge_cross(p0, p1, d0, d1):
 
 def _chain(segs, quantum):
     """Join undirected segments into closed loops via shared endpoints."""
-    key = lambda q: (round(float(q[0]) / quantum), round(float(q[1]) / quantum))
+
+    def key(q):
+        return (round(float(q[0]) / quantum), round(float(q[1]) / quantum))
+
     at = {}
     for i, (p, q) in enumerate(segs):
         at.setdefault(key(p), []).append(i)
@@ -275,8 +286,10 @@ def group_loops(loops, min_area=1e-4):
     """Loops of one shell -> [(outer, [holes])] by nesting depth (even = outer)."""
     loops = [lp for lp in loops if abs(signed_area(lp)) >= min_area]
     n = len(loops)
-    contains = [[j for j in range(n) if j != i and point_in_loop(loops[i][0], loops[j])]
-                for i in range(n)]
+    contains = [
+        [j for j in range(n) if j != i and point_in_loop(loops[i][0], loops[j])]
+        for i in range(n)
+    ]
     depth = [len(c) for c in contains]
     outers = [i for i in range(n) if depth[i] % 2 == 0]
     groups = {i: [] for i in outers}
@@ -314,11 +327,15 @@ class SliceFrame:
         # bbox isn't the footprint we think it is -- refuse rather than misplace fins.
         for s in (obs_sx, obs_sy):
             if not (0.9 * nominal < s < 1.1 * nominal):
-                raise ValueError(f"slice frame calibration off: scale {s:.1f} vs nominal {nominal:.1f}")
+                raise ValueError(
+                    f"slice frame calibration off: scale {s:.1f} vs nominal {nominal:.1f}"
+                )
         self.sx = nominal
         self.sy = nominal
         part_center = 0.5 * (part_xy_min + part_xy_max)
-        slice_center = np.array([0.5 * (bx0 + bx1), 0.5 * (by0 + by1)], dtype=np.float64)
+        slice_center = np.array(
+            [0.5 * (bx0 + bx1), 0.5 * (by0 + by1)], dtype=np.float64
+        )
         self.tx = slice_center[0] - part_center[0] * nominal
         self.ty = slice_center[1] - part_center[1] * nominal
 
@@ -378,15 +395,19 @@ def posed_part_soup(print_object):
 
 def _elephant_foot(print_object):
     """(compensation mm, layers) as Orca will apply it; 0 when printing on a raft."""
+
     def num(key, cast, default):
         try:
             v = print_object.config_value(key)
             return cast(v) if v not in (None, "") else default
         except (TypeError, ValueError):
             return default
+
     if num("raft_layers", int, 0) > 0:
         return 0.0, 0
-    return max(0.0, num("elefant_foot_compensation", float, 0.0)), max(1, num("elefant_foot_compensation_layers", int, 1))
+    return max(0.0, num("elefant_foot_compensation", float, 0.0)), max(
+        1, num("elefant_foot_compensation_layers", int, 1)
+    )
 
 
 def _shrink_keep_thin(expolys, delta_scaled):
@@ -419,10 +440,14 @@ def add_fins_to_layer(layer, fin_expolys):
     if not regions or not fin_expolys:
         return 0
 
-    layer_id = getattr(layer, 'id', None)
+    layer_id = getattr(layer, "id", None)
     is_id_zero = (layer_id() == 0) if callable(layer_id) else (layer_id == 0)
-    is_bottom = is_id_zero or (hasattr(layer, 'print_z') and layer.print_z < 0.35)
-    default_surface_type = orca.host.SurfaceType.stBottom if is_bottom else orca.host.SurfaceType.stInternal
+    is_bottom = is_id_zero or (hasattr(layer, "print_z") and layer.print_z < 0.35)
+    default_surface_type = (
+        orca.host.SurfaceType.stBottom
+        if is_bottom
+        else orca.host.SurfaceType.stInternal
+    )
 
     def _find_region_for_fin(regs, fin_box):
         for reg in regs:
@@ -435,14 +460,18 @@ def add_fins_to_layer(layer, fin_expolys):
     region_fins = {}
     for fin in fin_expolys:
         fbox = _expoly_bbox(fin)
-        target_reg = _find_region_for_fin(regions, fbox) if len(regions) > 1 else regions[0]
+        target_reg = (
+            _find_region_for_fin(regions, fbox) if len(regions) > 1 else regions[0]
+        )
         region_fins.setdefault(target_reg, []).append(fin)
 
     added = 0
     for region, fins in region_fins.items():
         existing = [(s.surface_type, s.expolygon) for s in region.slices.surfaces]
         # Copy: set()/append() below invalidate references into the live collection.
-        existing = [(t, orca.host.ExPolygon(e.contour, list(e.holes))) for t, e in existing]
+        existing = [
+            (t, orca.host.ExPolygon(e.contour, list(e.holes))) for t, e in existing
+        ]
         boxes = [_expoly_bbox(e) for _, e in existing]
         for fin in fins:
             merged, mtype, mbox = fin, default_surface_type, _expoly_bbox(fin)
@@ -450,7 +479,9 @@ def add_fins_to_layer(layer, fin_expolys):
             for (t, e), bb in zip(existing, boxes):
                 if _bbox_overlap(bb, mbox):
                     u = merged.union_ex(e)
-                    if len(u) == 1:          # they really overlapped: fuse, keep the part's type
+                    if (
+                        len(u) == 1
+                    ):  # they really overlapped: fuse, keep the part's type
                         merged, mtype, mbox = u[0], t, _expoly_bbox(u[0])
                         continue
                 keep.append((t, e))
@@ -478,19 +509,26 @@ def inject_fins(print_object, cfg, layer_height, unit, log=None):
     if len(soup) == 0:
         return "no model-part volumes"
     zmin = soup[:, :, 2].min()
-    soup = soup - np.array([0.0, 0.0, zmin])       # object bottom at z = 0, like slice_z
+    soup = soup - np.array([0.0, 0.0, zmin])  # object bottom at z = 0, like slice_z
     fins, stats = compute_fins(soup, layer_height, cfg)
     if len(fins) == 0:
         return "no fins needed"
     pts = soup.reshape(-1, 3)
     bbox = print_object.bounding_box()
     frame = SliceFrame(pts[:, :2].min(axis=0), pts[:, :2].max(axis=0), bbox, unit)
-    log.update({
-        "part_faces": int(len(soup)), "part_size_mm": (pts.max(axis=0) - pts.min(axis=0)).round(4).tolist(),
-        "slice_bbox_scaled": list(bbox), "unit": unit,
-        "frame_scale": [frame.sx, frame.sy], "frame_scale_vs_nominal": [frame.sx * unit, frame.sy * unit],
-        "engine": stats, "fin_triangles": int(len(fins)), "layers": [],
-    })
+    log.update(
+        {
+            "part_faces": int(len(soup)),
+            "part_size_mm": (pts.max(axis=0) - pts.min(axis=0)).round(4).tolist(),
+            "slice_bbox_scaled": list(bbox),
+            "unit": unit,
+            "frame_scale": [frame.sx, frame.sy],
+            "frame_scale_vs_nominal": [frame.sx * unit, frame.sy * unit],
+            "engine": stats,
+            "fin_triangles": int(len(fins)),
+            "layers": [],
+        }
+    )
     shells = split_shells(fins)
     shell_z = [(sh[:, :, 2].min(), sh[:, :, 2].max()) for sh in shells]
     efc_mm, efc_layers = _elephant_foot(print_object)
@@ -503,8 +541,11 @@ def inject_fins(print_object, cfg, layer_height, unit, log=None):
             if z < z0 or z > z1:
                 continue
             for outer, holes in group_loops(slice_soup(sh, z)):
-                expolys.append(orca.host.ExPolygon(frame.to_scaled(outer),
-                                                   [frame.to_scaled(h) for h in holes]))
+                expolys.append(
+                    orca.host.ExPolygon(
+                        frame.to_scaled(outer), [frame.to_scaled(h) for h in holes]
+                    )
+                )
         if expolys and efc_mm > 0 and layer_id < efc_layers:
             # Orca shrinks the first layer(s) by the elephant-foot compensation at
             # slice time, BEFORE our hook runs, so the part is already compensated and
@@ -514,9 +555,13 @@ def inject_fins(print_object, cfg, layer_height, unit, log=None):
             expolys = _shrink_keep_thin(expolys, int(round(shrink / unit)))
         if expolys and add_fins_to_layer(layer, expolys):
             touched += 1
-            log["layers"].append([round(z, 4), round(sum(e.area() for e in expolys) * unit * unit, 4)])
-    return (f"{stats.get('braces', 0)} fin(s), {stats.get('tines', 0)} tine(s) "
-            f"on {touched} layer(s)")
+            log["layers"].append(
+                [round(z, 4), round(sum(e.area() for e in expolys) * unit * unit, 4)]
+            )
+    return (
+        f"{stats.get('braces', 0)} fin(s), {stats.get('tines', 0)} tine(s) "
+        f"on {touched} layer(s)"
+    )
 
 
 class SupportFinsSlicing(orca.slicing.SlicingPipelineCapabilityBase):
@@ -531,18 +576,32 @@ class SupportFinsSlicing(orca.slicing.SlicingPipelineCapabilityBase):
             return orca.ExecutionResult.success()
         cfg = _cfg(self)
         if not cfg["enabled"]:
-            return orca.ExecutionResult.success("Support Fins: disabled in plugin config")
+            return orca.ExecutionResult.success(
+                "Support Fins: disabled in plugin config"
+            )
         if np is None:
-            return orca.ExecutionResult.failure(orca.PluginResult.RecoverableError,
-                                                "Support Fins needs numpy (install failed?)")
+            return orca.ExecutionResult.failure(
+                orca.PluginResult.RecoverableError,
+                "Support Fins needs numpy (install failed?)",
+            )
         po = ctx.object
         if cfg["apply_to"] != "all" and _truthy(po.config_value("enable_support")):
-            return orca.ExecutionResult.success("Support Fins: skipped (Orca supports are on for this part)")
+            return orca.ExecutionResult.success(
+                "Support Fins: skipped (Orca supports are on for this part)"
+            )
         try:
-            lh = float(po.config_value("layer_height") or ctx.config_value("layer_height") or 0.2)
+            lh = float(
+                po.config_value("layer_height")
+                or ctx.config_value("layer_height")
+                or 0.2
+            )
         except (TypeError, ValueError):
             lh = 0.2
-        log = {"object_id": _safe(lambda: po.id()), "layer_height": lh, "started": time.time()}
+        log = {
+            "object_id": _safe(lambda: po.id()),
+            "layer_height": lh,
+            "started": time.time(),
+        }
         try:
             msg = inject_fins(po, cfg, lh, orca.slicing.unscale(1), log)
         except Exception as e:  # never break a slice over fins; report and carry on
@@ -555,8 +614,10 @@ class SupportFinsSlicing(orca.slicing.SlicingPipelineCapabilityBase):
                 _engine = None
             log["error"] = f"{type(e).__name__}: {e}"
             _write_log(log)
-            return orca.ExecutionResult.failure(orca.PluginResult.RecoverableError,
-                                                f"Support Fins: {type(e).__name__}: {e}")
+            return orca.ExecutionResult.failure(
+                orca.PluginResult.RecoverableError,
+                f"Support Fins: {type(e).__name__}: {e}",
+            )
         log["result"] = msg
         log["seconds"] = round(time.time() - log["started"], 3)
         _write_log(log)
@@ -574,7 +635,9 @@ def _write_log(entry):
     """Spike diagnostics: append one JSON line per sliced object next to the plugin
     (support_fins_log.jsonl). Best effort -- never fails the slice."""
     try:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "support_fins_log.jsonl")
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), "support_fins_log.jsonl")
         if os.path.exists(path) and os.path.getsize(path) > 1024 * 1024:
             bak = path + ".1"
             try:

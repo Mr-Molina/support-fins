@@ -40,7 +40,7 @@ export function buildExportGeometry() {
   // whichever walls the live mode contributes -- hand-drawn in Draw, suggested
   // in Suggest -- plus the pad, all already in print space
   const finTris = [...activeAdded()];
-  const base = partName.replace(/\.(stl|3mf|step|stp)$/i, '') || 'part';
+  const base = partName.replace(/[\\/]/g, '').replace(/\.\./g, '').replace(/\.(stl|3mf|step|stp)$/i, '') || 'part';
   return { partTris, finTris, base };
 }
 

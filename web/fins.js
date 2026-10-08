@@ -383,7 +383,7 @@ function clipHalfSpace(poly, f) {
     const a = poly[i], b = poly[(i + 1) % poly.length];
     const fa = f(a), fb = f(b);
     if (fa >= 0) out.push(a);
-    if ((fa >= 0) !== (fb >= 0)) {
+    if ((fa > 0 && fb < 0) || (fa < 0 && fb > 0)) {
       const t = fa / (fa - fb);
       out.push([a[0] + (b[0] - a[0]) * t,
                 a[1] + (b[1] - a[1]) * t,
@@ -452,8 +452,10 @@ function wallIsClear(p, u0, u1, zTop, topo, rot, offset) {
  *                    plain breakaway variant the UI toggles to). Default true.
  */
 function buildFin(p0, out, span, topo, rot, offset, opts = {}) {
+  if (p0.h < 1e-4) return null;
   const before = out.length;
   const withTines = opts.tines !== false;
+  const tineH = Number.isFinite(opts.layerH) && opts.layerH > 0.05 ? opts.layerH : FIN.tineH;
   // A fin serving a DOWNWARD overhang face sits tucked under the part at the
   // plate-contact edge, where the part's own foot comes down right beside the
   // wall. The base ellipse, centred tangent to the wall, then reaches back UNDER
@@ -581,7 +583,7 @@ function buildFin(p0, out, span, topo, rot, offset, opts = {}) {
   const zTop = zAt(p, FIN.gap + r, tTop);
   const localBot = span.tBot != null ? zAt(p, 0, span.tBot) : p.z0;
   const zLo = Math.max(localBot, FIN.baseH) + 0.4;
-  const zHi = Math.min(zAt(p, 0, tTop), zTop) - FIN.tineH - 0.5;
+  const zHi = Math.min(zAt(p, 0, tTop), zTop) - tineH - 0.5;
 
   // Dense low, spreading with height: the part is least stable early, when it is
   // a narrow foot with all its leverage still to come. Higher up it is already
@@ -602,7 +604,7 @@ function buildFin(p0, out, span, topo, rot, offset, opts = {}) {
 
   let tines = 0;
   if (withTines) for (const z of rows) {
-    const zMid = z + FIN.tineH / 2;
+    const zMid = z + tineH / 2;
     // the wall's outer anchor is fixed; the inner end moves to meet the surface
     const s1 = (p.d + FIN.gap + FIN.tineGrip - p.n.z * zMid) / p.h;
     for (let i = 0; i < nU; i++) {
@@ -639,7 +641,7 @@ function buildFin(p0, out, span, topo, rot, offset, opts = {}) {
       // grid inside.js already built.
       if (!insidePart(topo, rot, offset,
                       nhx * s0 + p.u.x * uv, nhy * s0 + p.u.y * uv, zMid)) continue;
-      const rect = [[z, s0], [z + FIN.tineH, s0], [z + FIN.tineH, s1], [z, s1]];
+      const rect = [[z, s0], [z + tineH, s0], [z + tineH, s1], [z, s1]];
       // (z, nh, u) is right-handed: z x nh = u.
       extrude(rect, uv - FIN.tineW / 2, uv + FIN.tineW / 2,
               (a, b, t) => [nhx * b + p.u.x * t, nhy * b + p.u.y * t, a], out);
@@ -1610,6 +1612,13 @@ function unservedAfterWedges(topo, rot, result, servedRegions, wedgeTris) {
 export function buildFins(topo, result, rot, opts = {}) {
   applyTunables(opts.tunables);
   const built = buildFinsCore(topo, result, rot, opts);
+
+  for (let i = 0; i < built.triangles.length; i++) {
+    const p = built.triangles[i];
+    if (!Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) {
+      built.triangles[i] = [0, 0, 0];
+    }
+  }
   // Sway braces are an optional ADD-ON to whatever the mode placed (sway.js): a
   // tall part still needs its overhangs held, and bracing its sides is a
   // separate job on separate faces.
@@ -1634,7 +1643,7 @@ export function buildFins(topo, result, rot, opts = {}) {
   }));
   return {
     ...built,
-    triangles: [...built.triangles, ...sw.triangles],
+    triangles: built.triangles.concat(sw.triangles),
     fins: [...fins, ...braces],
     sway: { count: sw.count, tines: sw.tines, skipped: sw.skipped, reason: sw.reason,
             // The outlines travel back so a brace the user then clicks by hand can be
@@ -1732,7 +1741,7 @@ function buildFinsCore(topo, result, rot, opts = {}) {
     }
     return {
       ...base, mode,
-      triangles: [...base.triangles, ...wedgeTris],
+      triangles: base.triangles.concat(wedgeTris),
       fins,
       tines: (base.tines ?? 0) + wedgeTines,
       // A tined rib/wedge IS the combined support (a "brace"); a tineless one is a

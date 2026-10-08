@@ -39,6 +39,6 @@ onmessage = async (e) => {
     }
     postMessage({ id: e.data.id, ...r }, transfer);
   } catch (err) {
-    if (!e.data.warm) postMessage({ id: e?.data?.id, error: String(err?.message ?? err) });
+    if (!e?.data?.warm) postMessage({ id: e?.data?.id, error: String(err?.message ?? err) });
   }
 };

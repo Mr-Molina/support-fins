@@ -230,6 +230,9 @@ export async function unzip(bytes) {
   // rather than merely large, and reading on would walk garbage offsets.
   if (count === 0xffff || o === 0xffffffff) throw new Error('corrupt ZIP: ZIP64 markers with no ZIP64 record');
 
+  let totalUncompressed = 0;
+  const MAX_UNCOMPRESSED_TOTAL = 1024 * 1024 * 1024;
+
   const out = new Map();
   for (let i = 0; i < count; i++) {
     if (o < 0 || o + 46 > view.byteLength) throw new Error('corrupt ZIP central directory (out of bounds)');
@@ -240,6 +243,11 @@ export async function unzip(bytes) {
     const commentLen = view.getUint16(o + 32, true);
     if (o + 46 + nameLen + extraLen + commentLen > view.byteLength) throw new Error('corrupt ZIP central directory entry (out of bounds)');
     const name = dec.decode(bytes.subarray(o + 46, o + 46 + nameLen));
+    
+    if (name.includes('../') || name.includes('..\\') || name.startsWith('/') || name.startsWith('\\')) {
+      throw new Error('Invalid ZIP entry name (path traversal)');
+    }
+
     let uncompSize = view.getUint32(o + 24, true);
     let compSize = view.getUint32(o + 20, true);
     let localOff = view.getUint32(o + 42, true);
@@ -261,6 +269,10 @@ export async function unzip(bytes) {
     o += 46 + nameLen + extraLen + commentLen;
 
     if (uncompSize > MAX_UNCOMPRESSED_ENTRY) throw new Error('ZIP entry exceeds maximum allowable size');
+    totalUncompressed += uncompSize;
+    if (totalUncompressed > MAX_UNCOMPRESSED_TOTAL) {
+      throw new Error('Total uncompressed size exceeds limit (zip bomb protection)');
+    }
 
     if (name.endsWith('/')) continue;                       // directory marker
 

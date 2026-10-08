@@ -13,23 +13,29 @@ Per contact-line sample p, per height h above p, per side sigma of the wall:
 fire a horizontal ray inward from far outside and record the lateral distance
 from the wall plane to the first part surface.
 """
+
 import sys
 import numpy as np
 import trimesh
 
-from spike_overhangs import (OVERHANG_CUT, MIN_REGION_AREA, BED_EPS,
-                             contact_line, region_points)
+from spike_overhangs import (
+    OVERHANG_CUT,
+    MIN_REGION_AREA,
+    BED_EPS,
+    contact_line,
+    region_points,
+)
 
-HEIGHTS = np.array([0.5, 1.0, 2.0, 3.0, 5.0, 8.0])   # mm above the contact point
-REACH_MAX = 4.0        # mm; a tine longer than this is a strut, not a tine
-TH = 1.2               # wall thickness (tine starts at TH/2 off the wall plane)
+HEIGHTS = np.array([0.5, 1.0, 2.0, 3.0, 5.0, 8.0])  # mm above the contact point
+REACH_MAX = 4.0  # mm; a tine longer than this is a strut, not a tine
+TH = 1.2  # wall thickness (tine starts at TH/2 off the wall plane)
 
 
 def load(path):
-    mesh = trimesh.load(path, force='mesh')
+    mesh = trimesh.load(path, force="mesh")
     mesh.remove_unreferenced_vertices()
     mesh.apply_translation([0, 0, -mesh.bounds[0][2]])
-    if path.endswith('.obj'):
+    if path.endswith(".obj"):
         mesh.apply_scale(120.0 / max(mesh.extents))
         mesh.apply_translation([0, 0, -mesh.bounds[0][2]])
     return mesh
@@ -52,7 +58,7 @@ def probe_region(mesh, line, big):
     """For each side, return the median lateral distance wall-plane -> part face
     at each probe height, and the fraction of probes that landed within REACH_MAX."""
     origins, dirs, meta = [], [], []
-    for i in range(1, len(line) - 1):                 # skip endpoints
+    for i in range(1, len(line) - 1):  # skip endpoints
         p = line[i]
         a, b = line[i - 1], line[i + 1]
         run = np.array([b[0] - a[0], b[1] - a[1], 0.0])
@@ -71,26 +77,31 @@ def probe_region(mesh, line, big):
     if not origins:
         return None
     loc, ray_idx, _ = mesh.ray.intersects_location(
-        ray_origins=np.array(origins), ray_directions=np.array(dirs),
-        multiple_hits=False)
+        ray_origins=np.array(origins),
+        ray_directions=np.array(dirs),
+        multiple_hits=False,
+    )
     # lateral distance from the wall plane (through p, normal s) to the hit
-    dist = np.full((len(HEIGHTS), 2, 0), np.nan)
+    np.full((len(HEIGHTS), 2, 0), np.nan)
     buckets = {(hi, side): [] for hi in range(len(HEIGHTS)) for side in (0, 1)}
     for L, r in zip(loc, ray_idx):
         hi, side, p, s, sg = meta[r]
-        d = float(np.dot(L - p, s) * sg)              # >0 = out on that side
+        d = float(np.dot(L - p, s) * sg)  # >0 = out on that side
         buckets[(hi, side)].append(d)
     return buckets
 
 
 def main(paths):
-    print(f"{'part':>26} {'reg':>4} {'side':>5} " +
-          " ".join(f"h={h:<4g}" for h in HEIGHTS) + "   tinable%")
+    print(
+        f"{'part':>26} {'reg':>4} {'side':>5} "
+        + " ".join(f"h={h:<4g}" for h in HEIGHTS)
+        + "   tinable%"
+    )
     for path in paths:
         mesh = load(path)
         big = float(np.linalg.norm(mesh.extents)) + 10.0
         regs = regions_of(mesh)
-        name = path.split('/')[-1]
+        name = path.split("/")[-1]
         if not regs:
             print(f"{name:>26}    -   (no overhang regions)")
             continue
@@ -110,12 +121,15 @@ def main(paths):
                     med.append(np.median(v) if v else np.nan)
                     tot += len(line) - 2
                     tin += sum(1 for d in v if TH / 2 < d <= REACH_MAX)
-                cells = " ".join(f"{m:6.2f}" if not np.isnan(m) else "   n/a"
-                                 for m in med)
+                cells = " ".join(
+                    f"{m:6.2f}" if not np.isnan(m) else "   n/a" for m in med
+                )
                 pct = 100.0 * tin / max(1, tot)
-                print(f"{name:>26} {ri:>4} {'+s' if side == 0 else '-s':>5} "
-                      f"{cells}   {pct:5.0f}%")
+                print(
+                    f"{name:>26} {ri:>4} {'+s' if side == 0 else '-s':>5} "
+                    f"{cells}   {pct:5.0f}%"
+                )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(sys.argv[1:])

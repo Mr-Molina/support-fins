@@ -94,11 +94,13 @@ function meshVolumeMM3(tris) {
   let v = 0;
   for (let i = 0; i < tris.length; i += 3) {
     const a = tris[i], b = tris[i + 1], c = tris[i + 2];
-    v += a[0] * (b[1] * c[2] - b[2] * c[1])
-       - a[1] * (b[0] * c[2] - b[2] * c[0])
-       + a[2] * (b[0] * c[1] - b[1] * c[0]);
+    if (!a || !b || !c) continue;
+    const term = a[0] * (b[1] * c[2] - b[2] * c[1])
+               - a[1] * (b[0] * c[2] - b[2] * c[0])
+               + a[2] * (b[0] * c[1] - b[1] * c[0]);
+    if (Number.isFinite(term)) v += term;
   }
-  return Math.abs(v) / 6;
+  return (Math.abs(v) / 6) || 0;
 }
 
 export const fmtGrams = (g) => (g < 9.95 ? g.toFixed(1) : String(Math.round(g)));
@@ -206,7 +208,7 @@ function updateDrawReadout(built, ms) {
   }
   if (built && padNote(built)) lead.push(padNote(built));
   setFinNote(lead, help);
-  if (ms != null) el('s-time').textContent = `${analysisTiming} · pad ${ms.toFixed(0)} ms`;
+  if (Number.isFinite(ms)) el('s-time').textContent = `${analysisTiming} · pad ${ms.toFixed(0)} ms`;
 }
 
 /**
@@ -387,5 +389,5 @@ function updateFinReadout(built, ms) {
   // ms is absent when a hand-drawn wall (Suggest + Draw mix) re-runs the readout
   // without rebuilding the auto fins -- don't touch the timing line then, and
   // never throw, or the updateReceipt() call after this one never happens.
-  if (ms != null) el('s-time').textContent = `${analysisTiming} · fins ${ms.toFixed(0)} ms`;
+  if (Number.isFinite(ms)) el('s-time').textContent = `${analysisTiming} · fins ${ms.toFixed(0)} ms`;
 }

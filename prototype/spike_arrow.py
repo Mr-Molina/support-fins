@@ -18,17 +18,17 @@ whether a naive arrow UI is safe.
 
   python3 spike_arrow.py models/gen_wall_hook.stl 0,0,-1
 """
+
 import sys
 import numpy as np
 import trimesh
 
-PAD = True
-
 from spike_orient import metrics, candidates, elongation
+PAD = True
 
 
 def report(src, L):
-    mesh = trimesh.load(src, force='mesh')
+    mesh = trimesh.load(src, force="mesh")
     L = np.array(L, dtype=float)
     L /= np.linalg.norm(L)
     elong, axis = elongation(mesh)
@@ -38,10 +38,14 @@ def report(src, L):
     beam = axis - np.dot(axis, L) * L
     beam = beam / np.linalg.norm(beam) if np.linalg.norm(beam) > 1e-6 else axis
 
-    print(f"\n{'='*98}\n{src.split('/')[-1]}  bbox {np.round(mesh.extents,1)}  "
-          f"elongation {elong:.2f}")
-    print(f"  arrow (applied force) {np.round(L,2)}   ->  PULL-critical {np.round(L,2)}"
-          f"   BEND-critical (beam axis) {np.round(beam,2)}")
+    print(
+        f"\n{'=' * 98}\n{src.split('/')[-1]}  bbox {np.round(mesh.extents, 1)}  "
+        f"elongation {elong:.2f}"
+    )
+    print(
+        f"  arrow (applied force) {np.round(L, 2)}   ->  PULL-critical {np.round(L, 2)}"
+        f"   BEND-critical (beam axis) {np.round(beam, 2)}"
+    )
 
     rows = []
     for name, tilt, prob, m in candidates(mesh):
@@ -53,16 +57,20 @@ def report(src, L):
             U_, _, Vt = np.linalg.svd(A.T @ B)
             R = (U_ @ Vt).T
         d = metrics(m)
-        pull = 1.0 - abs(float((R @ L)[2]))     # 1 = load lies in the layer plane
+        pull = 1.0 - abs(float((R @ L)[2]))  # 1 = load lies in the layer plane
         bend = 1.0 - abs(float((R @ beam)[2]))
         rows.append((name, d, pull, bend))
 
-    print(f"  {'orientation':16} {'PULL':>6} {'BEND':>6} {'height':>7} {'bed':>7} "
-          f"{'overhang':>9} {'fins':>6} {'short':>6}")
+    print(
+        f"  {'orientation':16} {'PULL':>6} {'BEND':>6} {'height':>7} {'bed':>7} "
+        f"{'overhang':>9} {'fins':>6} {'short':>6}"
+    )
     for name, d, pull, bend in rows:
-        short = d['regions'] - d['real_fins']
-        print(f"  {name:16} {pull:6.2f} {bend:6.2f} {d['height']:7.1f} {d['bed']:7.0f} "
-              f"{d['over']:9.0f} {d['real_fins']:6d} {short:6d}")
+        short = d["regions"] - d["real_fins"]
+        print(
+            f"  {name:16} {pull:6.2f} {bend:6.2f} {d['height']:7.1f} {d['bed']:7.0f} "
+            f"{d['over']:9.0f} {d['real_fins']:6d} {short:6d}"
+        )
 
     def best(key):
         # strongest orientation that is actually printable: every overhang either
@@ -71,24 +79,36 @@ def report(src, L):
         # disqualifier: breakaway.py already has bed_pad() for exactly this.
         # PAD=True treats "add a bed pad" as available, which is what a real
         # tool would do, and lets strong-but-tilted orientations compete.
-        ok = [r for r in rows if (PAD or r[1]['bed'] > 20) and (r[1]['regions'] == 0 or
-              r[1]['real_fins'] >= 0.5 * r[1]['regions'])]
+        ok = [
+            r
+            for r in rows
+            if (PAD or r[1]["bed"] > 20)
+            and (r[1]["regions"] == 0 or r[1]["real_fins"] >= 0.5 * r[1]["regions"])
+        ]
         pool = ok or rows
         return max(pool, key=key)
 
     bp = best(lambda r: r[2])
     bb = best(lambda r: r[3])
-    flat = min(rows, key=lambda r: r[1]['height'])
-    print(f"  => PULL mode picks {bp[0]:14} (score {bp[2]:.2f}, {bp[1]['real_fins']} fins)")
-    print(f"  => BEND mode picks {bb[0]:14} (score {bb[3]:.2f}, {bb[1]['real_fins']} fins)")
-    print(f"  => flattest/default {flat[0]:13} (PULL {flat[2]:.2f} BEND {flat[3]:.2f}, "
-          f"{flat[1]['real_fins']} fins)")
+    flat = min(rows, key=lambda r: r[1]["height"])
+    print(
+        f"  => PULL mode picks {bp[0]:14} (score {bp[2]:.2f}, {bp[1]['real_fins']} fins)"
+    )
+    print(
+        f"  => BEND mode picks {bb[0]:14} (score {bb[3]:.2f}, {bb[1]['real_fins']} fins)"
+    )
+    print(
+        f"  => flattest/default {flat[0]:13} (PULL {flat[2]:.2f} BEND {flat[3]:.2f}, "
+        f"{flat[1]['real_fins']} fins)"
+    )
     if bp[0] != bb[0]:
-        print(f"  ** PULL and BEND DISAGREE -> a naive 'point at the force' UI would "
-              f"pick {bp[0]} for a part that actually fails in bending **")
+        print(
+            f"  ** PULL and BEND DISAGREE -> a naive 'point at the force' UI would "
+            f"pick {bp[0]} for a part that actually fails in bending **"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     src = sys.argv[1]
-    L = [float(x) for x in sys.argv[2].split(',')]
+    L = [float(x) for x in sys.argv[2].split(",")]
     report(src, L)

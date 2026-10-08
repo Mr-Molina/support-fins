@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate Prusa plugin manifest.json structure and required fields."""
+
 import json
 import sys
 

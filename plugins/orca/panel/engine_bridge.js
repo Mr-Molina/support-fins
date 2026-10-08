@@ -14,6 +14,7 @@ const LOOKUP = new Uint8Array(256);
 for (let i = 0; i < B64.length; i++) LOOKUP[B64.charCodeAt(i)] = i;
 
 export function b64ToBytes(s) {
+  if (s.length > 50 * 1024 * 1024) throw new Error("Input string too large for b64ToBytes");
   let pad = 0;
   if (s.endsWith('==')) pad = 2; else if (s.endsWith('=')) pad = 1;
   const n = (s.length / 4) * 3 - pad;

@@ -12,23 +12,29 @@ Tine length is the whole design constraint: the tine prints as an unsupported
 horizontal extrusion from the fin into the part (that is what makes it one
 continuous layer line). Slant3D's are ~a bead long. A 4mm tine is a bridge.
 """
+
 import sys
 import numpy as np
 import trimesh
 
-from spike_overhangs import (OVERHANG_CUT, MIN_REGION_AREA, BED_EPS,
-                             contact_line, region_points)
+from spike_overhangs import (
+    OVERHANG_CUT,
+    MIN_REGION_AREA,
+    BED_EPS,
+    contact_line,
+    region_points,
+)
 
-LADDER = np.arange(0.15, 3.01, 0.15)    # mm above the contact point
-TH = 1.2                                 # fin wall thickness
-GOOD_TINE = 1.5                          # mm; longer than this is a bridge, not a tine
+LADDER = np.arange(0.15, 3.01, 0.15)  # mm above the contact point
+TH = 1.2  # fin wall thickness
+GOOD_TINE = 1.5  # mm; longer than this is a bridge, not a tine
 
 
 def load(path):
-    mesh = trimesh.load(path, force='mesh')
+    mesh = trimesh.load(path, force="mesh")
     mesh.remove_unreferenced_vertices()
     mesh.apply_translation([0, 0, -mesh.bounds[0][2]])
-    if path.endswith('.obj'):
+    if path.endswith(".obj"):
         mesh.apply_scale(120.0 / max(mesh.extents))
         mesh.apply_translation([0, 0, -mesh.bounds[0][2]])
     return mesh
@@ -73,14 +79,16 @@ def min_tines(mesh, line, big):
     if not origins:
         return []
     loc, ray_idx, _ = mesh.ray.intersects_location(
-        ray_origins=np.array(origins), ray_directions=np.array(dirs),
-        multiple_hits=False)
+        ray_origins=np.array(origins),
+        ray_directions=np.array(dirs),
+        multiple_hits=False,
+    )
     best = {}
     for L, r in zip(loc, ray_idx):
         si, h, p, s, sg = meta[r]
-        d = float(np.dot(L - p, s) * sg)         # lateral offset from wall plane
-        tine = d - TH / 2.0                      # from the wall FACE to the part
-        if tine <= 0.02:                         # part is inside the wall here
+        d = float(np.dot(L - p, s) * sg)  # lateral offset from wall plane
+        tine = d - TH / 2.0  # from the wall FACE to the part
+        if tine <= 0.02:  # part is inside the wall here
             continue
         cur = best.get(si)
         if cur is None or tine < cur[0]:
@@ -89,14 +97,16 @@ def min_tines(mesh, line, big):
 
 
 def main(paths):
-    print(f"{'part':>26} {'reg':>4} {'stn':>4} {'tine<=1.5mm':>12} "
-          f"{'median tine':>12} {'median h':>9} {'side split':>12}")
+    print(
+        f"{'part':>26} {'reg':>4} {'stn':>4} {'tine<=1.5mm':>12} "
+        f"{'median tine':>12} {'median h':>9} {'side split':>12}"
+    )
     tot_st = tot_good = 0
     for path in paths:
         mesh = load(path)
         big = float(np.linalg.norm(mesh.extents)) + 10.0
         regs = sorted(regions_of(mesh), key=lambda c: -mesh.area_faces[c].sum())[:3]
-        name = path.split('/')[-1]
+        name = path.split("/")[-1]
         if not regs:
             print(f"{name:>26}    -    (no overhang regions)")
             continue
@@ -115,13 +125,17 @@ def main(paths):
             good = int((lens <= GOOD_TINE).sum())
             tot_st += len(res)
             tot_good += good
-            print(f"{name:>26} {ri:>4} {len(res):>4} "
-                  f"{good:>5}/{len(res):<6} {np.median(lens):>11.2f} "
-                  f"{np.median(hs):>9.2f} "
-                  f"{f'{int((sides>0).sum())}+/{int((sides<0).sum())}-':>12}")
-    print(f"\nOVERALL: {tot_good}/{tot_st} stations "
-          f"({100*tot_good/max(1,tot_st):.0f}%) take a tine <= {GOOD_TINE}mm")
+            print(
+                f"{name:>26} {ri:>4} {len(res):>4} "
+                f"{good:>5}/{len(res):<6} {np.median(lens):>11.2f} "
+                f"{np.median(hs):>9.2f} "
+                f"{f'{int((sides > 0).sum())}+/{int((sides < 0).sum())}-':>12}"
+            )
+    print(
+        f"\nOVERALL: {tot_good}/{tot_st} stations "
+        f"({100 * tot_good / max(1, tot_st):.0f}%) take a tine <= {GOOD_TINE}mm"
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(sys.argv[1:])

@@ -489,7 +489,12 @@ function resolvePlane(context is Context, q is Query) returns Plane
         const cs = evMateConnector(context, { "mateConnector" : mates[0] });
         return plane(cs.origin, cs.zAxis, cs.xAxis);
     }
-    return evPlane(context, { "face" : q });
+    const planarQ = qGeometry(q, GeometryType.PLANE);
+    if (isQueryEmpty(context, planarQ))
+    {
+        throw regenError("Selected face must be planar.", ["bed"]);
+    }
+    return evPlane(context, { "face" : planarQ });
 }
 
 /**
@@ -626,7 +631,7 @@ function supportPart(context is Context, pid is Id, part is Query, bedPlane is P
                     "Could not offset the part for clearance; used a vertical-only gap, so check wall flanks.");
         }
         const propsQ = qBodyType(qCreatedBy(pid + "props", EntityType.BODY), BodyType.SOLID);
-        try silent
+        try
         {
             opBoolean(context, pid + "propCut", {
                         "targets" : propsQ,
@@ -635,6 +640,7 @@ function supportPart(context is Context, pid is Id, part is Query, bedPlane is P
                         "keepTools" : true
                     });
         }
+
         catch
         {
             opDeleteBodies(context, pid + "propCutFail", { "entities" : propsQ });
@@ -682,7 +688,7 @@ function supportPart(context is Context, pid is Id, part is Query, bedPlane is P
     var merged = size(evaluateQuery(context, supQ)) < 2;
     if (!merged)
     {
-        try silent
+        try
         {
             opBoolean(context, pid + "merge", {
                         "tools" : supQ,
@@ -690,6 +696,10 @@ function supportPart(context is Context, pid is Id, part is Query, bedPlane is P
                         "allowDisjoint" : true
                     });
             merged = true;
+        }
+        catch
+        {
+            result.warnings = append(result.warnings, "Support body merge failed.");
         }
     }
     // a tine that missed its wall is a loose speck on the plate
@@ -738,14 +748,6 @@ function classifyFaces(context is Context, env is map, definition is map) return
     const excluded = definition.autoDetect ? tidSet(context, definition.excludeFaces) : {};
     const forced = tidSet(context, definition.extraFaces);
 
-    var params = [];
-    for (var i = 0; i < 5; i += 1)
-    {
-        for (var j = 0; j < 5; j += 1)
-        {
-            params = append(params, vector(0.1 + 0.2 * i, 0.1 + 0.2 * j));
-        }
-    }
 
     var info = {};
     var bedArea = 0 * millimeter ^ 2;
@@ -768,7 +770,7 @@ function classifyFaces(context is Context, env is map, definition is map) return
             }
         }
 
-        if (fbox.maxCorner[2] < BED_EPS)
+        if (fbox.maxCorner[2] < BED_EPS && fbox.minCorner[2] > -BED_EPS)
         {
             // resting on the plate: this IS the bottom, not an overhang
             if (planar && dot(normal, env.up) < -0.99)
@@ -780,12 +782,24 @@ function classifyFaces(context is Context, env is map, definition is map) return
 
         if (!planar)
         {
+            const bnd = evSurfaceParameterization(context, { "face" : f });
+            var params = [];
+            for (var i = 0; i < 5; i += 1)
+            {
+                for (var j = 0; j < 5; j += 1)
+                {
+                    const u = bnd.minU + (bnd.maxU - bnd.minU) * (0.1 + 0.2 * i);
+                    const v = bnd.minV + (bnd.maxV - bnd.minV) * (0.1 + 0.2 * j);
+                    params = append(params, vector(u, v));
+                }
+            }
             const planes = evFaceTangentPlanes(context, { "face" : f, "parameters" : params });
             var over = vector(0, 0, 0);
             var down = vector(0, 0, 0);
             var count = 0;
             for (var p in planes)
             {
+                if (p == undefined) continue;
                 const nz = dot(p.normal, env.up);
                 if (nz < -env.cut)
                 {
@@ -1156,11 +1170,17 @@ function simplifyPolyline(pts is array, tol is ValueWithUnits) returns array
         }
     }
     var out = [];
+    var lastX = -1e9 * millimeter;
     for (var k = 0; k < n; k += 1)
     {
         if (keep[k])
         {
+            if (size(out) > 0 && pts[k][0] <= lastX + 1e-6 * millimeter)
+            {
+                continue;
+            }
             out = append(out, pts[k]);
+            lastX = pts[k][0];
         }
     }
     return out;
@@ -2040,11 +2060,16 @@ function emitBoxes(context is Context, bid is Id, env is map, anchors is array,
         transforms = append(transforms, toWorld(coordSystem(a.origin, xd, env.up)));
         names = append(names, "t" ~ i);
     }
-    opPattern(context, bid + "pattern", {
-                "entities" : qCreatedBy(bid + "tpl", EntityType.BODY),
-                "transforms" : transforms,
-                "instanceNames" : names
-            });
+    const chunkSize = 200;
+    for (var j = 0; j < size(transforms); j += chunkSize)
+    {
+        const chunkEnd = min(j + chunkSize, size(transforms));
+        opPattern(context, bid + "pattern" ~ j, {
+                    "entities" : qCreatedBy(bid + "tpl", EntityType.BODY),
+                    "transforms" : subArray(transforms, j, chunkEnd),
+                    "instanceNames" : subArray(names, j, chunkEnd)
+                });
+    }
     opDeleteBodies(context, bid + "tplDel", { "entities" : qCreatedBy(bid + "tpl", EntityType.BODY) });
     return size(anchors);
 }

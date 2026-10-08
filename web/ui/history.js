@@ -28,7 +28,7 @@ function snapshot() {
   const q = part.quaternion;
   return {
     quat: [q.x, q.y, q.z, q.w],
-    walls: drawnWalls.map((w) => ({ kind: w.kind, face: w.face, a: w.a.clone(), b: w.b?.clone() })),
+    walls: drawnWalls.map((w) => ({ kind: w.kind, face: Array.isArray(w.face) ? [...w.face] : w.face, a: w.a.clone(), b: w.b?.clone() })),
     load: loadDir ? loadDir.clone() : null,
     loadMode,
     finMode, finsVisible, drawAugment,
@@ -48,7 +48,7 @@ export function histPush() {
 
 function restoreState(s) {
   part.quaternion.set(s.quat[0], s.quat[1], s.quat[2], s.quat[3]);
-  setDrawnWalls(s.walls.map((w) => ({ kind: w.kind, face: w.face, a: w.a.clone(), b: w.b?.clone(),
+  setDrawnWalls(s.walls.map((w) => ({ kind: w.kind, face: Array.isArray(w.face) ? [...w.face] : w.face, a: w.a.clone(), b: w.b?.clone(),
                                        ok: false, info: null })));
   replaceLoadDir(s.load ? s.load.clone() : null);
   if (s.loadMode) setLoadMode(s.loadMode);

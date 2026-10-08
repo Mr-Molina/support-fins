@@ -10,6 +10,7 @@ The FakePrintObject slices its part with trimesh (an independent slicer) in a
 PrusaSlicer-style frame: centred on the XY footprint, scaled 1e6 per mm, object
 bottom at z = 0 -- so the plugin's frame calibration is actually exercised.
 """
+
 import enum
 import sys
 import types
@@ -43,8 +44,12 @@ class ExecutionResult:
 
     @staticmethod
     def failure(status, message, data=""):
-        if not isinstance(status, PluginResult):  # the real binding raises TypeError too
-            raise TypeError(f"failure(): status must be PluginResult, got {type(status).__name__}")
+        if not isinstance(
+            status, PluginResult
+        ):  # the real binding raises TypeError too
+            raise TypeError(
+                f"failure(): status must be PluginResult, got {type(status).__name__}"
+            )
         return ExecutionResult(status, message)
 
     def __repr__(self):
@@ -71,7 +76,9 @@ def _ring(x):
         return x.as_array()
     a = np.asarray(x)
     if a.dtype != np.int64 or a.ndim != 2 or a.shape[1] != 2 or len(a) < 3:
-        raise ValueError("polygon coordinates must be an (N,2) int64 ndarray (scaled coords)")
+        raise ValueError(
+            "polygon coordinates must be an (N,2) int64 ndarray (scaled coords)"
+        )
     return a
 
 
@@ -80,7 +87,9 @@ class ExPolygon:
         self._p = SPoly(_ring(contour), [_ring(h) for h in (holes or [])])
         if not self._p.is_valid:
             self._p = shapely.make_valid(self._p)
-            if isinstance(self._p, MultiPolygon):  # keep the biggest piece, like a bad ring would
+            if isinstance(
+                self._p, MultiPolygon
+            ):  # keep the biggest piece, like a bad ring would
                 self._p = max(self._p.geoms, key=lambda g: g.area)
 
     @classmethod
@@ -95,7 +104,10 @@ class ExPolygon:
 
     @property
     def holes(self):
-        return [FakePolygon(np.asarray(r.coords[:-1], dtype=np.int64)) for r in self._p.interiors]
+        return [
+            FakePolygon(np.asarray(r.coords[:-1], dtype=np.int64))
+            for r in self._p.interiors
+        ]
 
     def area(self):
         return self._p.area
@@ -103,12 +115,16 @@ class ExPolygon:
     def offset(self, delta):
         g = self._p.buffer(delta, join_style=2, mitre_limit=3.0)
         geoms = g.geoms if hasattr(g, "geoms") else [g]
-        return [ExPolygon._from(x) for x in geoms if isinstance(x, SPoly) and x.area > 0]
+        return [
+            ExPolygon._from(x) for x in geoms if isinstance(x, SPoly) and x.area > 0
+        ]
 
     def union_ex(self, other):
         u = self._p.union(other._p)
         geoms = u.geoms if hasattr(u, "geoms") else [u]
-        return [ExPolygon._from(g) for g in geoms if isinstance(g, SPoly) and g.area > 0]
+        return [
+            ExPolygon._from(g) for g in geoms if isinstance(g, SPoly) and g.area > 0
+        ]
 
 
 class Surface:
@@ -164,7 +180,11 @@ class _Mesh:
 
 class FakeVolume:
     def __init__(self, V, T, matrix=None, part=True):
-        self._mesh, self._m, self._part = _Mesh(V, T), (np.eye(4) if matrix is None else matrix), part
+        self._mesh, self._m, self._part = (
+            _Mesh(V, T),
+            (np.eye(4) if matrix is None else matrix),
+            part,
+        )
 
     def mesh(self):
         return self._mesh
@@ -191,10 +211,14 @@ class FakePrintObject:
     """Slices `trimesh_part` (already in OBJECT coords) through `trafo` like Orca."""
 
     def __init__(self, trimesh_part, trafo, layer_height=0.2, config=None):
-        import trimesh
         self._trafo = np.array(trafo, dtype=np.float64)
-        self._mo = FakeModelObject([FakeVolume(np.asarray(trimesh_part.vertices),
-                                               np.asarray(trimesh_part.faces))])
+        self._mo = FakeModelObject(
+            [
+                FakeVolume(
+                    np.asarray(trimesh_part.vertices), np.asarray(trimesh_part.faces)
+                )
+            ]
+        )
         self._cfg = {"enable_support": "0", "layer_height": str(layer_height)}
         self._cfg.update(config or {})
         posed = trimesh_part.copy()
@@ -216,10 +240,15 @@ class FakePrintObject:
                 for poly in planar.polygons_full:
                     # to_2D may shift/rotate; map back through to3d's XY part
                     ext = self._to_xy(np.asarray(poly.exterior.coords), to3d)
-                    holes = [self._to_xy(np.asarray(r.coords), to3d) for r in poly.interiors]
-                    L.regions()[0].slices.surfaces.append(Surface(
-                        SurfaceType.stInternal,
-                        ExPolygon(self._sc(ext), [self._sc(hh) for hh in holes])))
+                    holes = [
+                        self._to_xy(np.asarray(r.coords), to3d) for r in poly.interiors
+                    ]
+                    L.regions()[0].slices.surfaces.append(
+                        Surface(
+                            SurfaceType.stInternal,
+                            ExPolygon(self._sc(ext), [self._sc(hh) for hh in holes]),
+                        )
+                    )
             L.make_slices()
             self._layers.append(L)
             z += h
@@ -279,8 +308,9 @@ def install():
     m.PluginResult = PluginResult
     m.ExecutionResult = ExecutionResult
     m.host = types.SimpleNamespace(ExPolygon=ExPolygon, SurfaceType=SurfaceType)
-    m.slicing = types.SimpleNamespace(SlicingPipelineCapabilityBase=_CapBase, Step=Step,
-                                      unscale=lambda v: v / SCALE)
+    m.slicing = types.SimpleNamespace(
+        SlicingPipelineCapabilityBase=_CapBase, Step=Step, unscale=lambda v: v / SCALE
+    )
     m.script = types.SimpleNamespace(ScriptPluginCapabilityBase=_CapBase)
     m.base = object
     m.plugin = lambda cls: cls
